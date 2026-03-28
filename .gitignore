@@ -10,10 +10,12 @@ __pycache__/
 *.pyd
 .Python
 
-# Data (large / generated files)
+# Data — raw source files (large, not needed at runtime)
 data/raw/
-data/chroma_db/
-data/homesignal.db
+
+# Note: data/homesignal.db and data/chroma_db/ are tracked in git
+# because Streamlit Community Cloud has no persistent disk.
+# Run the pipeline locally, then commit these files before deploying.
 
 # OMC runtime state (plans are committed, runtime state is not)
 .omc/state/

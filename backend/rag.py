@@ -74,8 +74,17 @@ class RAGEngine:
         self.cfg = cfg or Config()
 
         anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+        # Fallback to Streamlit secrets for cloud deployment
         if not anthropic_api_key:
-            raise RuntimeError("FAIL: ANTHROPIC_API_KEY not found in .env")
+            try:
+                import streamlit as st
+                anthropic_api_key = st.secrets.get("ANTHROPIC_API_KEY")
+            except Exception:
+                pass
+        if not anthropic_api_key:
+            raise RuntimeError(
+                "ANTHROPIC_API_KEY not found. Set it in .env or Streamlit secrets."
+            )
         self._claude = anthropic.Anthropic(api_key=anthropic_api_key)
 
         self._embedder = SentenceTransformer(self.cfg.embedding_model_name)

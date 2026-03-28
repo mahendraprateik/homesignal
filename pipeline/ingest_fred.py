@@ -59,8 +59,17 @@ def _ensure_parent_dir(path: str) -> None:
 
 def _get_fred_client() -> Fred:
     fred_key = os.getenv("FRED_API_KEY")
+    # Fallback to Streamlit secrets for cloud deployment
     if not fred_key:
-        raise RuntimeError("FAIL: FRED_API_KEY not found in .env")
+        try:
+            import streamlit as st
+            fred_key = st.secrets.get("FRED_API_KEY")
+        except Exception:
+            pass
+    if not fred_key:
+        raise RuntimeError(
+            "FRED_API_KEY not found. Set it in .env or Streamlit secrets."
+        )
     return Fred(api_key=fred_key)
 
 
