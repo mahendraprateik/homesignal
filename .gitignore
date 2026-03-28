@@ -1,0 +1,31 @@
+# Environment & secrets
+.env
+.env.*
+
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Data (large / generated files)
+data/raw/
+data/chroma_db/
+data/homesignal.db
+
+# OMC runtime state (plans are committed, runtime state is not)
+.omc/state/
+.omc/project-memory.json
+
+# Streamlit cache
+.streamlit/cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/

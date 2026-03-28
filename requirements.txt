@@ -1,0 +1,9 @@
+anthropic
+streamlit
+pandas
+plotly
+chromadb
+fredapi
+python-dotenv
+requests
+pyyaml

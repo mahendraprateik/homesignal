@@ -1,0 +1,4 @@
+"""
+HomeSignal backend package.
+"""
+
