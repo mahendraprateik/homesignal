@@ -23,6 +23,7 @@ import pandas as pd
 
 from backend.chat_engine import ChatEngine
 from backend.rag import Config, RAGEngine
+from backend.semantic_model import get_semantic_model
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -204,6 +205,11 @@ def get_data_freshness() -> Dict[str, Dict[str, Optional[str]]]:
     except Exception:
         result["redfin"] = {"latest_period": None, "loaded_at": None}
     return result
+
+
+def get_dashboard_card_config() -> List[Dict[str, Any]]:
+    """Return ordered dashboard card definitions from the semantic model."""
+    return get_semantic_model().dashboard_cards()
 
 
 def get_latest_metrics_for_metro(metro_name: str) -> Dict[str, Any]:

@@ -39,6 +39,8 @@ import pandas as pd
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 
+from backend.semantic_model import get_semantic_model
+
 
 @dataclass(frozen=True)
 class Config:
@@ -56,17 +58,6 @@ class Config:
     log_every: int = 25
 
 
-METRIC_DEFINITIONS_YAML = """median_sale_price: median sale price USD
-days_on_market: median days on market
-inventory: active listings count
-price_drop_pct: percentage of listings with a price reduction
-homes_sold: total homes sold in the period
-new_listings: new listings added in the period
-months_of_supply: months of inventory at current sales pace
-avg_sale_to_list: average sale-to-list price ratio
-sold_above_list: percentage of homes sold above list price
-Note: FRED macroeconomic data (mortgage rates, CPI, unemployment, housing starts) is available via direct SQL query, not embedded here.
-"""
 
 
 class SentenceTransformerEmbeddingFunction:
@@ -130,40 +121,37 @@ def _doc_market_text(row: pd.Series) -> str:
     """
     Build the narrative text chunk for one (metro, month) market data document.
     Contains Redfin housing metrics only — FRED macro data is queried at RAG time.
+    Metric formatting is driven by the semantic model.
     """
     metro = row["metro_name"]
     state = row["state"]
     period_date = row["period_date"]
 
-    median_sale_price = _fmt(row.get("median_sale_price"), 0)
-    price_mom = _fmt(row.get("price_mom"), 2)
-    price_yoy = _fmt(row.get("price_yoy"), 2)
-    days_on_market = _fmt(row.get("days_on_market"), 1)
-    inventory = _fmt(row.get("inventory"), 0)
-    inventory_mom = _fmt(row.get("inventory_mom"), 2)
-    price_drop_pct = _fmt(row.get("price_drop_pct"), 2)
-    homes_sold = _fmt(row.get("homes_sold"), 0)
-    new_listings = _fmt(row.get("new_listings"), 0)
-    months_of_supply = _fmt(row.get("months_of_supply"), 2)
-    avg_sale_to_list = _fmt(row.get("avg_sale_to_list"), 3)
-    sold_above_list = _fmt(row.get("sold_above_list"), 2)
+    lines = [f"Metro: {metro}, {state}. Month: {period_date}."]
 
-    return (
-        f"Metro: {metro}, {state}. Month: {period_date}.\n"
-        f"median_sale_price: ${median_sale_price} "
-        f"(price_mom: {price_mom}%, price_yoy: {price_yoy}%).\n"
-        f"days_on_market: {days_on_market} days.\n"
-        f"inventory: {inventory} active listings (inventory_mom: {inventory_mom}%).\n"
-        f"price_drop_pct: {price_drop_pct}% of listings with a price reduction.\n"
-        f"Homes sold: {homes_sold}; New listings: {new_listings}; Months of supply: {months_of_supply}.\n"
-        f"Avg sale-to-list: {avg_sale_to_list}; Sold above list: {sold_above_list}%."
-    )
+    for mc in get_semantic_model().vector_metric_configs():
+        value = _fmt(row.get(mc["key"]), mc["digits"])
+        line = f"{mc['display_name']}: {mc['prefix']}{value}{mc['suffix']}"
+
+        # Append MoM/YoY inline if defined
+        extras = []
+        if mc["mom_column"]:
+            extras.append(f"MoM: {_fmt(row.get(mc['mom_column']), 2)}%")
+        if mc["yoy_column"]:
+            extras.append(f"YoY: {_fmt(row.get(mc['yoy_column']), 2)}%")
+        if extras:
+            line += f" ({', '.join(extras)})"
+
+        lines.append(line + ".")
+
+    return "\n".join(lines)
 
 
 def _doc_trend_text(metro_name: str, state: str, metro_df: pd.DataFrame) -> str:
     """
     Build an 18-month trend summary document for a metro.
     Answers "how has X changed over time?" questions without needing point-in-time retrieval.
+    Metric list and formatting driven by the semantic model.
     """
     df = metro_df.sort_values("period_date").copy()
     if len(df) < 2:
@@ -175,7 +163,13 @@ def _doc_trend_text(metro_name: str, state: str, metro_df: pd.DataFrame) -> str:
     date_end = last["period_date"]
     n_months = len(df)
 
-    def trend_line(label: str, col: str, prefix: str = "", suffix: str = "", digits: int = 0) -> str:
+    def _trend_line(mc: dict) -> str:
+        col = mc["key"]
+        label = mc["display_name"]
+        prefix = mc["prefix"]
+        suffix = mc["suffix"]
+        digits = mc["digits"]
+
         v0 = first.get(col)
         v1 = last.get(col)
         if v0 is None or v1 is None:
@@ -189,38 +183,31 @@ def _doc_trend_text(metro_name: str, state: str, metro_df: pd.DataFrame) -> str:
         pct = (change / v0 * 100) if v0 != 0 else 0
         direction = "rising" if change > 0 else ("falling" if change < 0 else "flat")
         return (
-            f"{label}: {prefix}{v0:,.{digits}f}{suffix} → {prefix}{v1:,.{digits}f}{suffix} "
-            f"({change:+,.{digits}f}{suffix}, {pct:+.1f}%) — {direction}"
+            f"{label}: {prefix}{v0:,.{digits}f}{suffix} \u2192 {prefix}{v1:,.{digits}f}{suffix} "
+            f"({change:+,.{digits}f}{suffix}, {pct:+.1f}%) \u2014 {direction}"
         )
-
-    # Compute min/max over the period for price
-    price_min = df["median_sale_price"].min() if "median_sale_price" in df else None
-    price_max = df["median_sale_price"].max() if "median_sale_price" in df else None
-    price_min_str = f"${price_min:,.0f}" if price_min and not pd.isna(price_min) else "N/A"
-    price_max_str = f"${price_max:,.0f}" if price_max and not pd.isna(price_max) else "N/A"
 
     lines = [
         f"Metro: {metro_name}, {state}. 18-Month Trend Summary ({date_start} to {date_end}, {n_months} months).",
-        trend_line("Median sale price", "median_sale_price", prefix="$", digits=0),
-        f"  Price range over period: {price_min_str} (low) to {price_max_str} (high)",
-        trend_line("Inventory (active listings)", "inventory", digits=0),
-        trend_line("Days on market", "days_on_market", suffix=" days", digits=1),
-        trend_line("Price drop %", "price_drop_pct", suffix="%", digits=1),
-        trend_line("Homes sold", "homes_sold", digits=0),
-        trend_line("New listings", "new_listings", digits=0),
-        trend_line("Months of supply", "months_of_supply", digits=2),
     ]
+
+    for mc in get_semantic_model().vector_metric_configs():
+        # Skip derived columns (mom/yoy) — they're not trended independently
+        lines.append(_trend_line(mc))
+
+        # For the primary price metric, add a min/max range line
+        if mc["key"] == "median_sale_price" and "median_sale_price" in df.columns:
+            price_min = df["median_sale_price"].min()
+            price_max = df["median_sale_price"].max()
+            price_min_str = f"${price_min:,.0f}" if price_min and not pd.isna(price_min) else "N/A"
+            price_max_str = f"${price_max:,.0f}" if price_max and not pd.isna(price_max) else "N/A"
+            lines.append(f"  Price range over period: {price_min_str} (low) to {price_max_str} (high)")
+
     return "\n".join(lines)
 
 
 def _doc_metric_definitions_text() -> str:
-    return (
-        "HomeSignal metric definitions (grounding rules):\n"
-        f"{METRIC_DEFINITIONS_YAML}\n"
-        "Notes: All housing metrics come from Redfin Metro Market Tracker monthly snapshots. "
-        "FRED macroeconomic data (mortgage rates, CPI, unemployment, housing starts) is "
-        "available separately via direct SQL query at RAG query time."
-    )
+    return get_semantic_model().grounding_text()
 
 
 def _read_redfin_table(cfg: Config) -> pd.DataFrame:

@@ -1,0 +1,250 @@
+# HomeSignal Semantic Model
+# =========================
+# Single source of truth for all metric definitions used across the app:
+# - Data pipeline (ingestion column mapping, vector document generation)
+# - RAG engine (grounding context for LLM answers)
+# - Chat engine (SQL tool allowlists, tool descriptions)
+# - Frontend (dashboard cards, chart labels, formatting)
+#
+# Every component that references a metric should read from this file
+# via backend.semantic_model rather than hardcoding definitions.
+
+redfin_metrics:
+  median_sale_price:
+    display_name: "Median Sale Price"
+    description: "Median sale price of all residential properties sold in the period."
+    unit: "USD"
+    format: "money"            # format_money() — "$X,XXX.00"
+    source: "Redfin"
+    source_column: "MEDIAN_SALE_PRICE"
+    geography_levels: [metro, city, county, state, neighborhood, zip, national]
+    update_cadence: "monthly"
+    delta_color: "normal"      # up = green, down = red
+    dashboard_card: true
+    dashboard_position: 1
+    rankable: true             # allowed in top_metros_by_metric tool
+    vector_format_digits: 0
+    vector_prefix: "$"
+    vector_suffix: ""
+    mom_column: "price_mom"
+    yoy_column: "price_yoy"
+
+  days_on_market:
+    display_name: "Days on Market"
+    description: "Median number of days a property stays on the market before sale."
+    unit: "days"
+    format: "number"           # format_number() — "X,XXX"
+    source: "Redfin"
+    source_column: "MEDIAN_DOM"
+    geography_levels: [metro, city, county, state, neighborhood, zip, national]
+    update_cadence: "monthly"
+    delta_color: "inverse"     # up = red (bad), down = green (good)
+    dashboard_card: true
+    dashboard_position: 2
+    rankable: true
+    vector_format_digits: 1
+    vector_prefix: ""
+    vector_suffix: " days"
+
+  inventory:
+    display_name: "Inventory"
+    description: "Total number of active residential listings at the end of the period."
+    unit: "listings"
+    format: "number"
+    source: "Redfin"
+    source_column: "INVENTORY"
+    geography_levels: [metro, city, county, state, neighborhood, zip, national]
+    update_cadence: "monthly"
+    delta_color: "inverse"
+    dashboard_card: true
+    dashboard_position: 3
+    rankable: true
+    vector_format_digits: 0
+    vector_prefix: ""
+    vector_suffix: " active listings"
+    mom_column: "inventory_mom"
+
+  price_drop_pct:
+    display_name: "Price Drop %"
+    description: "Percentage of active listings with at least one price reduction during the period."
+    unit: "percent"
+    format: "pct"              # format_pct() — "X.XX%"
+    source: "Redfin"
+    source_column: "PRICE_DROPS"
+    geography_levels: [metro, city, county, state, neighborhood, zip, national]
+    update_cadence: "monthly"
+    delta_color: "inverse"
+    dashboard_card: true
+    dashboard_position: 4
+    rankable: true
+    vector_format_digits: 2
+    vector_prefix: ""
+    vector_suffix: "%"
+    display_normalize: true    # may need 0-1 → 0-100 normalization
+
+  homes_sold:
+    display_name: "Homes Sold"
+    description: "Total number of residential properties sold (closed) in the period."
+    unit: "homes"
+    format: "number"
+    source: "Redfin"
+    source_column: "HOMES_SOLD"
+    geography_levels: [metro, city, county, state, neighborhood, zip, national]
+    update_cadence: "monthly"
+    delta_color: "normal"
+    dashboard_card: false
+    rankable: true
+    vector_format_digits: 0
+    vector_prefix: ""
+    vector_suffix: ""
+    aggregation: "sum"         # sum across sub-regions (vs avg for most metrics)
+
+  new_listings:
+    display_name: "New Listings"
+    description: "Number of new residential listings added to the market in the period."
+    unit: "listings"
+    format: "number"
+    source: "Redfin"
+    source_column: "NEW_LISTINGS"
+    geography_levels: [metro, city, county, state, neighborhood, zip, national]
+    update_cadence: "monthly"
+    delta_color: "normal"
+    dashboard_card: false
+    rankable: true
+    vector_format_digits: 0
+    vector_prefix: ""
+    vector_suffix: ""
+    aggregation: "sum"
+
+  months_of_supply:
+    display_name: "Months of Supply"
+    description: >-
+      Number of months it would take to sell all current inventory at the
+      current sales pace. Below 4 months is a seller's market; above 6 months
+      is a buyer's market.
+    unit: "months"
+    format: "number"
+    source: "Redfin"
+    source_column: "MONTHS_OF_SUPPLY"
+    geography_levels: [metro, city, county, state, neighborhood, zip, national]
+    update_cadence: "monthly"
+    delta_color: "inverse"
+    dashboard_card: false
+    rankable: true
+    vector_format_digits: 2
+    vector_prefix: ""
+    vector_suffix: ""
+
+  avg_sale_to_list:
+    display_name: "Avg Sale-to-List Ratio"
+    description: >-
+      Average ratio of final sale price to original list price. Values above
+      1.00 indicate homes are selling above asking price on average.
+    unit: "ratio"
+    format: "number"
+    source: "Redfin"
+    source_column: "AVG_SALE_TO_LIST"
+    geography_levels: [metro, city, county, state, neighborhood, zip, national]
+    update_cadence: "monthly"
+    delta_color: "normal"
+    dashboard_card: false
+    rankable: false
+    vector_format_digits: 3
+    vector_prefix: ""
+    vector_suffix: ""
+
+  sold_above_list:
+    display_name: "Sold Above List %"
+    description: "Percentage of homes that sold for more than their list price."
+    unit: "percent"
+    format: "pct"
+    source: "Redfin"
+    source_column: "SOLD_ABOVE_LIST"
+    geography_levels: [metro, city, county, state, neighborhood, zip, national]
+    update_cadence: "monthly"
+    delta_color: "normal"
+    dashboard_card: false
+    rankable: false
+    vector_format_digits: 2
+    vector_prefix: ""
+    vector_suffix: "%"
+
+  # Derived / MoM-only columns stored in SQLite but not standalone metrics
+  price_mom:
+    display_name: "Price MoM %"
+    description: "Month-over-month percentage change in median sale price (from Redfin)."
+    unit: "percent"
+    format: "pct"
+    source: "Redfin"
+    source_column: "MEDIAN_SALE_PRICE_MOM"
+    update_cadence: "monthly"
+    dashboard_card: false
+    rankable: false
+    derived: true
+
+  price_yoy:
+    display_name: "Price YoY %"
+    description: "Year-over-year percentage change in median sale price (from Redfin)."
+    unit: "percent"
+    format: "pct"
+    source: "Redfin"
+    source_column: "MEDIAN_SALE_PRICE_YOY"
+    update_cadence: "monthly"
+    dashboard_card: false
+    rankable: false
+    derived: true
+
+  inventory_mom:
+    display_name: "Inventory MoM %"
+    description: "Month-over-month percentage change in active inventory (from Redfin)."
+    unit: "percent"
+    format: "pct"
+    source: "Redfin"
+    source_column: "INVENTORY_MOM"
+    update_cadence: "monthly"
+    dashboard_card: false
+    rankable: false
+    derived: true
+
+fred_metrics:
+  MORTGAGE30US:
+    display_name: "30yr Mortgage Rate"
+    description: "Weekly average 30-year fixed-rate mortgage rate from the Federal Reserve (Freddie Mac survey)."
+    unit: "percent"
+    format: "rate"             # "{:.2f}%"
+    source: "FRED"
+    series_id: "MORTGAGE30US"
+    update_cadence: "weekly"
+    delta_color: "inverse"
+    dashboard_card: true
+    dashboard_position: 5
+
+  CPIAUCSL:
+    display_name: "Consumer Price Index"
+    description: "Consumer Price Index for All Urban Consumers (CPI-U), seasonally adjusted. Base period 1982-84 = 100."
+    unit: "index"
+    format: "number"
+    source: "FRED"
+    series_id: "CPIAUCSL"
+    update_cadence: "monthly"
+    dashboard_card: false
+
+  UNRATE:
+    display_name: "Unemployment Rate"
+    description: "Civilian unemployment rate, seasonally adjusted, from the Bureau of Labor Statistics."
+    unit: "percent"
+    format: "rate"
+    source: "FRED"
+    series_id: "UNRATE"
+    update_cadence: "monthly"
+    dashboard_card: false
+
+  HOUST:
+    display_name: "Housing Starts"
+    description: "Total new privately-owned housing units started, seasonally adjusted annual rate (thousands of units)."
+    unit: "thousands"
+    format: "number"
+    source: "FRED"
+    series_id: "HOUST"
+    update_cadence: "monthly"
+    dashboard_card: false

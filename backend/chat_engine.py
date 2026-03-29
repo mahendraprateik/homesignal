@@ -26,6 +26,7 @@ import threading
 from typing import Any, Dict, List, Optional
 
 from backend.rag import Config, RAGEngine
+from backend.semantic_model import get_semantic_model
 
 
 class ChatEngine:
@@ -38,12 +39,9 @@ class ChatEngine:
     - Merging RAG sources with SQL tool sources
     """
 
-    _METRIC_ALLOWLIST = {
-        "median_sale_price", "days_on_market", "inventory", "price_drop_pct",
-        "homes_sold", "new_listings", "months_of_supply",
-    }
-
     def __init__(self, cfg: Optional[Config] = None) -> None:
+        self._semantic_model = get_semantic_model()
+        self._METRIC_ALLOWLIST = self._semantic_model.rankable_metric_names()
         self.cfg = cfg or Config()
         self._rag = RAGEngine(cfg=self.cfg)
 
@@ -289,8 +287,7 @@ class ChatEngine:
                 "name": "query_latest_metrics",
                 "description": (
                     "Get the most recent housing market metrics for a specific metro area. "
-                    "Returns median sale price, days on market, inventory, price drops, "
-                    "homes sold, new listings, months of supply, and more."
+                    f"Returns: {self._semantic_model.redfin_metrics_summary_for_tools()}."
                 ),
                 "input_schema": {
                     "type": "object",

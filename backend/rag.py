@@ -26,6 +26,8 @@ import chromadb
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 
+from backend.semantic_model import get_semantic_model
+
 
 @dataclass(frozen=True)
 class Config:
@@ -463,14 +465,7 @@ class RAGEngine:
         except Exception:
             pass
 
-        fallback_text = (
-            "HomeSignal metric definitions (grounding rules):\n"
-            "median_sale_price: median sale price USD\n"
-            "days_on_market: median days on market\n"
-            "inventory: active listings count\n"
-            "price_drop_pct: percentage of listings with a price reduction\n"
-            "mortgage_rate_30yr: 30yr fixed rate from Federal Reserve\n"
-        )
+        fallback_text = get_semantic_model().grounding_text()
         fallback_meta = {
             self.cfg.meta_metro_key: "ALL",
             self.cfg.meta_state_key: "ALL",

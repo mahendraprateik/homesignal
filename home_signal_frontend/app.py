@@ -386,70 +386,42 @@ def _render_sidebar(metro_names: List[str], metros_df) -> str:
 
 
 def _render_metric_cards(latest: Dict[str, Any]) -> None:
-    """Render the 5 metric cards."""
-    cards = st.columns(5, gap="small")
+    """Render dashboard metric cards driven by the semantic model."""
+    card_defs = api.get_dashboard_card_config()
+    cols = st.columns(len(card_defs), gap="small")
 
-    with cards[0]:
-        st.metric(
-            "Median Sale Price",
-            format_money(latest.get("median_sale_price")),
-            delta=(
-                None
-                if latest.get("median_sale_price_mom_pct") is None
-                else f"{latest['median_sale_price_mom_pct']:.2f}%"
-            ),
-        )
+    _FORMAT_FN = {
+        "money": format_money,
+        "number": format_number,
+        "pct": format_pct,
+        "rate": lambda v: "N/A" if v is None else f"{v:.2f}%",
+    }
 
-    with cards[1]:
-        st.metric(
-            "Days on Market",
-            format_number(latest.get("days_on_market")),
-            delta=(
-                None
-                if latest.get("days_on_market_mom_pct") is None
-                else f"{latest['days_on_market_mom_pct']:.2f}%"
-            ),
-            delta_color="inverse",
-        )
+    for col, card in zip(cols, card_defs):
+        key = card["key"]
+        fmt = card.get("format", "number")
+        delta_color = card.get("delta_color", "normal")
+        formatter = _FORMAT_FN.get(fmt, format_number)
 
-    with cards[2]:
-        st.metric(
-            "Inventory",
-            format_number(latest.get("inventory")),
-            delta=(
-                None
-                if latest.get("inventory_mom_pct") is None
-                else f"{latest['inventory_mom_pct']:.2f}%"
-            ),
-            delta_color="inverse",
-        )
+        # Determine value and delta keys based on source
+        if card["source"] == "fred":
+            value = latest.get(f"{key}")
+            delta_val = latest.get(f"{key}_mom_pct")
+        else:
+            value = latest.get(key)
+            delta_val = latest.get(f"{key}_mom_pct")
 
-    with cards[3]:
-        price_drop_display = normalize_price_drop_pct_for_display(latest.get("price_drop_pct"))
-        st.metric(
-            "Price Drop %",
-            format_pct(price_drop_display),
-            delta=(
-                None
-                if latest.get("price_drop_pct_mom_pct") is None
-                else f"{latest['price_drop_pct_mom_pct']:.2f}%"
-            ),
-            delta_color="inverse",
-        )
+        # Apply display normalization (e.g. price_drop_pct 0-1 → 0-100)
+        if card.get("display_normalize") and fmt == "pct":
+            value = normalize_price_drop_pct_for_display(value)
 
-    with cards[4]:
-        st.metric(
-            "30yr Mortgage Rate",
-            "N/A"
-            if latest.get("mortgage_rate_30yr") is None
-            else f"{latest['mortgage_rate_30yr']:.2f}%",
-            delta=(
-                None
-                if latest.get("mortgage_rate_30yr_mom_pct") is None
-                else f"{latest['mortgage_rate_30yr_mom_pct']:.2f}%"
-            ),
-            delta_color="inverse",
-        )
+        with col:
+            st.metric(
+                card["display_name"],
+                formatter(value),
+                delta=None if delta_val is None else f"{delta_val:.2f}%",
+                delta_color=delta_color,
+            )
 
 
 def _render_trend_chart(metro_name: str, state: Optional[str]) -> None:
@@ -708,11 +680,11 @@ def main() -> None:
 
     mortgage = cached_get_mortgage_rate()
     if mortgage:
-        latest["mortgage_rate_30yr"] = mortgage.get("latest_rate")
-        latest["mortgage_rate_30yr_mom_pct"] = mortgage.get("mom_pct")
+        latest["MORTGAGE30US"] = mortgage.get("latest_rate")
+        latest["MORTGAGE30US_mom_pct"] = mortgage.get("mom_pct")
     else:
-        latest["mortgage_rate_30yr"] = None
-        latest["mortgage_rate_30yr_mom_pct"] = None
+        latest["MORTGAGE30US"] = None
+        latest["MORTGAGE30US_mom_pct"] = None
 
     _render_metric_cards(latest)
     st.divider()

@@ -37,6 +37,8 @@ import pandas as pd
 from dotenv import load_dotenv
 from fredapi import Fred
 
+from backend.semantic_model import get_semantic_model
+
 
 # ===========================================================================
 # Configuration
@@ -66,27 +68,9 @@ REDFIN_SOURCES: List[RedfinSource] = [
     RedfinSource("us_national_market_tracker.tsv000.gz",   "national",     None),
 ]
 
-REDFIN_METRIC_RENAME = {
-    "MEDIAN_SALE_PRICE":     "median_sale_price",
-    "MEDIAN_SALE_PRICE_MOM": "price_mom",
-    "MEDIAN_SALE_PRICE_YOY": "price_yoy",
-    "MEDIAN_DOM":            "days_on_market",
-    "INVENTORY":             "inventory",
-    "INVENTORY_MOM":         "inventory_mom",
-    "PRICE_DROPS":           "price_drop_pct",
-    "HOMES_SOLD":            "homes_sold",
-    "NEW_LISTINGS":          "new_listings",
-    "MONTHS_OF_SUPPLY":      "months_of_supply",
-    "AVG_SALE_TO_LIST":      "avg_sale_to_list",
-    "SOLD_ABOVE_LIST":       "sold_above_list",
-}
-
-FRED_SERIES: List[str] = [
-    "MORTGAGE30US",   # 30-year fixed mortgage rate (weekly)
-    "CPIAUCSL",       # Consumer Price Index — All Urban Consumers (monthly)
-    "UNRATE",         # Unemployment Rate (monthly)
-    "HOUST",          # Housing Starts: Total (monthly, thousands of units)
-]
+_SM = get_semantic_model()
+REDFIN_METRIC_RENAME = _SM.redfin_column_rename_map()
+FRED_SERIES: List[str] = _SM.fred_series_ids()
 
 
 @dataclass(frozen=True)
@@ -230,6 +214,9 @@ def _project_redfin(df: pd.DataFrame, region_type: str) -> pd.DataFrame:
 
 def _init_redfin_table(conn: sqlite3.Connection, table_name: str) -> None:
     """Drop and recreate the Redfin table for idempotent runs."""
+    metric_cols = _SM.redfin_sqlite_columns()
+    metric_col_defs = "\n".join(f"            {col} REAL," for col in metric_cols)
+
     conn.execute(f"DROP TABLE IF EXISTS {table_name}")
     conn.execute(f"""
         CREATE TABLE {table_name} (
@@ -238,18 +225,7 @@ def _init_redfin_table(conn: sqlite3.Connection, table_name: str) -> None:
             state             TEXT NOT NULL,
             region_type       TEXT NOT NULL,
 
-            median_sale_price REAL,
-            price_mom         REAL,
-            price_yoy         REAL,
-            days_on_market    REAL,
-            inventory         REAL,
-            inventory_mom     REAL,
-            price_drop_pct    REAL,
-            homes_sold        REAL,
-            new_listings      REAL,
-            months_of_supply  REAL,
-            avg_sale_to_list  REAL,
-            sold_above_list   REAL,
+{metric_col_defs}
 
             loaded_at         TEXT NOT NULL
         )
