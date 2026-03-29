@@ -158,7 +158,12 @@ def ensure_ai_tables() -> None:
 def get_metros() -> pd.DataFrame:
     """Return distinct metros ordered by name."""
     return _db_read_df(
-        "SELECT DISTINCT metro_name, state FROM redfin_metrics ORDER BY metro_name"
+        """
+        SELECT DISTINCT metro_name, state
+        FROM redfin_metrics
+        WHERE region_type = 'metro'
+        ORDER BY metro_name
+        """
     )
 
 
@@ -200,6 +205,7 @@ def get_latest_metrics_for_metro(metro_name: str) -> Dict[str, Any]:
             months_of_supply, price_mom, inventory_mom
         FROM redfin_metrics
         WHERE metro_name = ?
+          AND region_type = 'metro'
         ORDER BY period_date ASC
         """,
         (metro_name,),
@@ -300,6 +306,7 @@ def get_trend_series(metro_name: str, months: int = 12) -> pd.DataFrame:
         SELECT period_date, median_sale_price
         FROM redfin_metrics
         WHERE metro_name = ?
+          AND region_type = 'metro'
         ORDER BY period_date ASC
         """,
         (metro_name,),
@@ -539,6 +546,7 @@ def get_or_create_daily_brief(metro_name: str, state: Optional[str]) -> Dict[str
 def chat(
     question: str,
     conversation_history: Optional[List[Dict[str, str]]] = None,
+    metro_filter: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Send a chat question through the hybrid RAG + SQL engine.
@@ -553,7 +561,11 @@ def chat(
         }
     """
     engine = _get_chat_engine()
-    return engine.chat(question, conversation_history=conversation_history)
+    return engine.chat(
+        question,
+        conversation_history=conversation_history,
+        metro_filter=metro_filter,
+    )
 
 
 def log_feedback(

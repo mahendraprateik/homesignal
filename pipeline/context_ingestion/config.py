@@ -35,13 +35,6 @@ class Config:
 
 DATA_SOURCES: List[Dict[str, Any]] = [
     {
-        "name": "redfin_weekly",
-        "type": "market_narrative",
-        "base_urls": ["https://www.redfin.com/news/weekly-market-update/"],
-        "topics": ["pricing", "inventory", "demand"],
-        "geography": "national",
-    },
-    {
         "name": "redfin_market_tracker",
         "type": "market_narrative",
         "base_urls": ["https://www.redfin.com/news/market-tracker/"],
@@ -53,13 +46,6 @@ DATA_SOURCES: List[Dict[str, Any]] = [
         "type": "market_narrative",
         "base_urls": ["https://www.zillow.com/research/"],
         "topics": ["pricing", "demand", "forecast"],
-        "geography": "national",
-    },
-    {
-        "name": "nar_reports",
-        "type": "market_narrative",
-        "base_urls": ["https://www.nar.realtor/research-and-statistics"],
-        "topics": ["pricing", "inventory", "sales"],
         "geography": "national",
     },
     {
@@ -98,19 +84,5 @@ DATA_SOURCES: List[Dict[str, Any]] = [
         ],
         "topics": ["migration", "demand"],
         "geography": "national",
-    },
-    {
-        "name": "local_sf_news",
-        "type": "market_narrative",
-        "base_urls": ["https://www.sfchronicle.com/realestate/"],
-        "topics": ["local_market", "policy", "inventory"],
-        "geography": "city",
-    },
-    {
-        "name": "la_times_housing",
-        "type": "market_narrative",
-        "base_urls": ["https://www.latimes.com/business/real-estate"],
-        "topics": ["local_market", "policy"],
-        "geography": "state",
     },
 ]

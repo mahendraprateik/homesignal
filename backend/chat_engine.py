@@ -61,6 +61,7 @@ class ChatEngine:
         self,
         question: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
+        metro_filter: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Answer a user question using RAG context + SQL tools.
@@ -89,7 +90,7 @@ class ChatEngine:
         try:
             rag_result = self._rag.query(
                 question=question,
-                metro_filter=None,
+                metro_filter=metro_filter,
                 conversation_history=conversation_history,
             )
         except Exception:
@@ -97,7 +98,7 @@ class ChatEngine:
             self._metro_alias_map = self._rag._metro_alias_map
             rag_result = self._rag.query(
                 question=question,
-                metro_filter=None,
+                metro_filter=metro_filter,
                 conversation_history=conversation_history,
             )
 
@@ -110,12 +111,17 @@ class ChatEngine:
         self._last_tool_sources = []
 
         rag_context = self._format_rag_context(rag_result)
+        metro_instruction = (
+            f"- The selected metro for this session is: {metro_filter}. Prioritize this metro unless the user explicitly requests another.\n"
+            if metro_filter else ""
+        )
         user_prompt = (
             f"User question:\n{question}\n\n"
             f"Retrieved context documents (from vector search):\n{rag_context}\n\n"
             "Instructions:\n"
             "- Use the context documents above for trends, historical data, and general market reasoning.\n"
             "- Use the database query tools for precise, up-to-date metric values when needed.\n"
+            f"{metro_instruction}"
             "- You may combine both sources in a single answer.\n"
             "- Cite context documents using [1], [2], etc.\n"
             "- When using tool results, state the data period (e.g., 'as of February 2026')."

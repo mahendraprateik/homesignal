@@ -462,6 +462,17 @@ def _render_chat(metro_name: str) -> None:
         st.session_state.chat_histories[metro_name] = []
     chat_history = st.session_state.chat_histories[metro_name]
 
+    def _dedupe_sources(values: Optional[List[str]]) -> List[str]:
+        deduped: List[str] = []
+        seen = set()
+        for src in values or []:
+            s = (src or "").strip()
+            if not s or s in seen:
+                continue
+            seen.add(s)
+            deduped.append(s)
+        return deduped
+
     # Render existing messages.
     for i, msg in enumerate(chat_history):
         with st.chat_message(msg["role"]):
@@ -523,14 +534,25 @@ def _render_chat(metro_name: str) -> None:
                     for msg in chat_history[:-1]
                     if msg.get("content")
                 ]
-                res = api.chat(user_question, conversation_history=history_for_chat)
-                answer = res["answer"]
-                sources = res.get("sources") or []
+                try:
+                    res = api.chat(
+                        user_question,
+                        conversation_history=history_for_chat,
+                        metro_filter=metro_name,
+                    )
+                    answer = res["answer"]
+                    sources = _dedupe_sources(res.get("sources"))
+                except Exception:
+                    answer = (
+                        "I hit a temporary issue while generating this answer. "
+                        "Please try again in a moment."
+                    )
+                    sources = []
 
                 st.markdown(render_chat_answer_preserving_dollars(answer))
                 with st.expander("Sources", expanded=False):
                     src_lines = "\n".join(f"{i}. {s}" for i, s in enumerate(sources, start=1))
-                    st.markdown(src_lines)
+                    st.markdown(src_lines if src_lines else "No sources available.")
 
         chat_history.append(
             {

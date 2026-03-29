@@ -89,7 +89,12 @@ def run_pipeline(
         Config as RefreshConfig,
         check_fred_freshness,
         check_redfin_freshness,
-        download_redfin_files,
+    )
+    from pipeline.data_ingestion import (
+        Config as IngestionConfig,
+        download_redfin,
+        ingest_fred,
+        ingest_redfin,
     )
 
     cfg = RefreshConfig()
@@ -103,13 +108,15 @@ def run_pipeline(
     run_redfin = force or redfin_fresh.is_stale
     data_updated = False
 
+    ingestion_cfg = IngestionConfig()
+
     # ------------------------------------------------------------------
     # Step 2: Download Redfin raw files (if needed)
     # ------------------------------------------------------------------
     if run_redfin:
         _run_step(
             "Download Redfin files",
-            lambda: download_redfin_files(cfg, _log),
+            lambda: download_redfin(ingestion_cfg, _log)[1] == 0,
             errors,
         )
 
@@ -117,9 +124,7 @@ def run_pipeline(
     # Step 3: Ingest FRED → SQLite
     # ------------------------------------------------------------------
     if run_fred:
-        from pipeline.ingest_fred import main as fred_main
-
-        ok = _run_step("FRED ingest", lambda: _call_void(fred_main), errors)
+        ok = _run_step("FRED ingest", lambda: ingest_fred(ingestion_cfg, _log) >= 0, errors)
         if ok:
             data_updated = True
 
@@ -127,9 +132,7 @@ def run_pipeline(
     # Step 4: Ingest Redfin → SQLite
     # ------------------------------------------------------------------
     if run_redfin:
-        from pipeline.ingest_redfin import main as redfin_main
-
-        ok = _run_step("Redfin ingest", lambda: _call_void(redfin_main), errors)
+        ok = _run_step("Redfin ingest", lambda: ingest_redfin(ingestion_cfg, _log) >= 0, errors)
         if ok:
             data_updated = True
 
