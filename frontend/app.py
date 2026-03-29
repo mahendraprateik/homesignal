@@ -19,6 +19,7 @@ import sys
 import os
 import re
 import html
+import threading
 
 # Ensure the project root is on `sys.path` so `backend/` is importable when
 # running `streamlit run frontend/app.py` from the repo root.
@@ -36,6 +37,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from backend.chat_engine import ChatEngine
 from backend.rag import Config, RAGEngine
 
 
@@ -171,14 +173,13 @@ def _answer_with_superscript_citations(answer: str) -> str:
 
 def _render_chat_answer_preserving_dollars(text: str) -> str:
     """
-    Renders an answer via HTML in `st.markdown` while preserving dollar signs
-    and preventing markdown/LaTeX parsing from interfering with "$...".
+    Prepares an answer for st.markdown rendering while preserving dollar signs
+    and preventing LaTeX parsing from interfering with "$...".
     """
     cleaned = _answer_with_superscript_citations(text)
-    escaped = html.escape(cleaned)
-    # Avoid MathJax/LaTeX triggering in Markdown by escaping $.
-    escaped = escaped.replace("$", "&#36;")
-    return f"<div style='white-space: pre-wrap;'>{escaped}</div>"
+    # Escape $ to prevent MathJax/LaTeX triggering in Streamlit markdown.
+    cleaned = cleaned.replace("$", "\\$")
+    return cleaned
 
 
 def _truncate_tooltip_text(text: str, max_chars: int = 150) -> str:
@@ -223,6 +224,11 @@ def get_rag() -> RAGEngine:
 
 
 @st.cache_resource(show_spinner=False)
+def get_chat_engine() -> ChatEngine:
+    return ChatEngine()
+
+
+@st.cache_resource(show_spinner=False)
 def get_rag_tooltip() -> RAGEngine:
     # Haiku for cost-efficient one-sentence hover tooltips.
     return RAGEngine(cfg=Config(claude_model="claude-haiku-4-5-20251001", claude_max_tokens=60))
@@ -249,6 +255,27 @@ def get_last_updated_date() -> Optional[str]:
     if not max_pd:
         return None
     return str(max_pd)
+
+
+@st.cache_data(ttl=300)
+def get_data_freshness() -> dict:
+    """Return freshness info for both data sources. Cached for 5 minutes."""
+    result: Dict[str, Dict[str, Optional[str]]] = {"fred": {}, "redfin": {}}
+    try:
+        fred_period = _db_read_scalar(
+            "SELECT MAX(period_date) FROM fred_metrics WHERE series_id = 'MORTGAGE30US'"
+        )
+        fred_loaded = _db_read_scalar("SELECT MAX(loaded_at) FROM fred_metrics")
+        result["fred"] = {"latest_period": fred_period, "loaded_at": fred_loaded}
+    except Exception:
+        result["fred"] = {"latest_period": None, "loaded_at": None}
+    try:
+        redfin_period = _db_read_scalar("SELECT MAX(period_date) FROM redfin_metrics")
+        redfin_loaded = _db_read_scalar("SELECT MAX(loaded_at) FROM redfin_metrics")
+        result["redfin"] = {"latest_period": redfin_period, "loaded_at": redfin_loaded}
+    except Exception:
+        result["redfin"] = {"latest_period": None, "loaded_at": None}
+    return result
 
 
 @st.cache_data(ttl=3600)
@@ -587,6 +614,35 @@ def get_or_create_daily_brief(rag: RAGEngine, metro_name: str, state: Optional[s
     }
 
 
+def _trigger_refresh(force: bool = False) -> None:
+    """Kick off the refresh pipeline in a background thread."""
+    if st.session_state.get("refresh_running"):
+        return
+
+    st.session_state.refresh_running = True
+    st.session_state.refresh_done = False
+    st.session_state.refresh_result = {}
+
+    def _worker() -> None:
+        try:
+            from pipeline.refresh import run_refresh, Config as RefreshConfig
+            result = run_refresh(cfg=RefreshConfig(), force=force)
+            st.session_state.refresh_result = {
+                "fred_updated": result.fred_updated,
+                "redfin_updated": result.redfin_updated,
+                "vectors_rebuilt": result.vectors_rebuilt,
+                "errors": result.errors,
+            }
+        except Exception as e:
+            st.session_state.refresh_result = {"errors": [str(e)]}
+        finally:
+            st.session_state.refresh_running = False
+            st.session_state.refresh_done = True
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+
 def main() -> None:
     st.set_page_config(page_title="HomeSignal", page_icon="🏠", layout="wide")
     if "tables_ensured" not in st.session_state:
@@ -684,6 +740,69 @@ hr { border-color: #E8E6E1 !important; }
         last_updated = get_last_updated_date()
         if last_updated:
             st.caption(f"Data through: {last_updated}")
+
+        # ── Data Freshness & Refresh ───────────────────────────────
+        with st.expander("Data Freshness", expanded=False):
+            freshness = get_data_freshness()
+            fred_info = freshness.get("fred", {})
+            redfin_info = freshness.get("redfin", {})
+
+            def _staleness_label(period_str: Optional[str], stale_days: int) -> Tuple[str, str, bool]:
+                if not period_str:
+                    return "stale", "No data", True
+                try:
+                    period_dt = datetime.strptime(str(period_str)[:10], "%Y-%m-%d").date()
+                    days_old = (datetime.now(timezone.utc).date() - period_dt).days
+                    is_stale = days_old > stale_days
+                    label = "stale" if is_stale else "fresh"
+                    return label, f"{days_old}d ago", is_stale
+                except Exception:
+                    return "unknown", "unknown", False
+
+            fred_label, fred_age, fred_stale = _staleness_label(fred_info.get("latest_period"), 8)
+            redfin_label, redfin_age, redfin_stale = _staleness_label(redfin_info.get("latest_period"), 35)
+
+            fred_color = "#D32F2F" if fred_stale else "#2E7D32"
+            redfin_color = "#D32F2F" if redfin_stale else "#2E7D32"
+
+            st.markdown(
+                f'<span style="color:{fred_color};font-weight:600;">FRED</span> '
+                f'— {fred_info.get("latest_period", "N/A")} ({fred_age})',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f'<span style="color:{redfin_color};font-weight:600;">Redfin</span> '
+                f'— {redfin_info.get("latest_period", "N/A")} ({redfin_age})',
+                unsafe_allow_html=True,
+            )
+
+            force_refresh = st.toggle("Force refresh", value=False, key="force_refresh_toggle")
+
+            if st.button("Refresh Data", key="refresh_btn", use_container_width=True):
+                _trigger_refresh(force=force_refresh)
+
+            if st.session_state.get("refresh_running"):
+                st.info("Refresh in progress...")
+            elif st.session_state.get("refresh_done"):
+                res = st.session_state.get("refresh_result", {})
+                parts = []
+                if res.get("fred_updated"):
+                    parts.append("FRED updated")
+                if res.get("redfin_updated"):
+                    parts.append("Redfin updated")
+                if res.get("vectors_rebuilt"):
+                    parts.append("vectors rebuilt")
+                if parts:
+                    st.success(", ".join(parts) + ".")
+                    st.cache_data.clear()
+                    st.cache_resource.clear()
+                elif res.get("errors"):
+                    st.error("Refresh failed: " + str(res["errors"][0]))
+                else:
+                    st.success("Data is already current.")
+                if st.button("Dismiss", key="refresh_dismiss"):
+                    st.session_state.refresh_done = False
+                    st.session_state.refresh_result = {}
 
         default_metro = "Phoenix, AZ metro area"
         if default_metro not in metro_names:
@@ -899,10 +1018,7 @@ hr { border-color: #E8E6E1 !important; }
     # ---------------------------
     st.subheader("Daily AI Market Brief")
     brief = get_or_create_daily_brief(rag, metro_name=metro_name, state=state)
-    brief_text = brief["brief_text"]
-    brief_text = re.sub(r"\[\d+\]", "", brief_text)
-    brief_text = re.sub(r"<sup>\d+</sup>", "", brief_text)
-    brief_text = brief_text.strip()
+    brief_text = _answer_with_superscript_citations(brief["brief_text"])
     brief_escaped = html.escape(brief_text).replace("$", "&#36;")
     st.markdown(f"""
 <div style="
@@ -939,7 +1055,6 @@ hr { border-color: #E8E6E1 !important; }
             if msg.get("role") == "assistant":
                 st.markdown(
                     _render_chat_answer_preserving_dollars(content),
-                    unsafe_allow_html=True,
                 )
             else:
                 st.write(content)
@@ -961,7 +1076,7 @@ hr { border-color: #E8E6E1 !important; }
                     cols = st.columns([1, 1, 6])
                     with cols[0]:
                         if st.button("👍", key=f"up_{fb_key}"):
-                            rag.log_feedback(
+                            get_chat_engine().log_feedback(
                                 question=msg.get("question", ""),
                                 answer=msg["content"],
                                 feedback="up",
@@ -972,7 +1087,7 @@ hr { border-color: #E8E6E1 !important; }
                             st.rerun()
                     with cols[1]:
                         if st.button("👎", key=f"down_{fb_key}"):
-                            rag.log_feedback(
+                            get_chat_engine().log_feedback(
                                 question=msg.get("question", ""),
                                 answer=msg["content"],
                                 feedback="down",
@@ -992,25 +1107,22 @@ hr { border-color: #E8E6E1 !important; }
 
         with st.chat_message("assistant"):
             with st.spinner("Generating response..."):
-                # Build conversation history for RAG (exclude the message we just appended)
-                history_for_rag = [
+                # Build conversation history (exclude the message we just appended)
+                history_for_chat = [
                     {"role": msg["role"], "content": msg["content"]}
                     for msg in chat_history[:-1]
                     if msg.get("content")
                 ]
-                # Let RAGEngine auto-detect metros; no explicit filter for chat
-                res = rag.query(
+                chat_engine = get_chat_engine()
+                res = chat_engine.chat(
                     user_question,
-                    metro_filter=None,
-                    conversation_history=history_for_rag,
+                    conversation_history=history_for_chat,
                 )
                 answer = res["answer"]
                 sources = res.get("sources") or []
-                cleaned_answer = _answer_with_superscript_citations(answer)
 
                 st.markdown(
-                    _render_chat_answer_preserving_dollars(cleaned_answer),
-                    unsafe_allow_html=True,
+                    _render_chat_answer_preserving_dollars(answer),
                 )
                 with st.expander("Sources", expanded=False):
                     src_lines = "\n".join(f"{i}. {s}" for i, s in enumerate(sources, start=1))
@@ -1019,7 +1131,7 @@ hr { border-color: #E8E6E1 !important; }
         chat_history.append(
             {
                 "role": "assistant",
-                "content": cleaned_answer,
+                "content": _answer_with_superscript_citations(answer),
                 "sources": sources,
                 "question": user_question,
                 "feedback": None,

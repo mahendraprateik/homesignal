@@ -305,6 +305,9 @@ class RAGEngine:
 
         context_block = self._format_context_for_claude(context_items)
 
+        # Inject live FRED macro data from SQLite (not embedded in vectors)
+        fred_context = self._get_fred_context()
+
         multi_metro_note = (
             f"\n- This question compares {len(detected_metros)} metros: "
             f"{', '.join(detected_metros)}. Structure your answer to address each clearly."
@@ -315,8 +318,11 @@ class RAGEngine:
             f"User question:\n{question}\n\n"
             "Context documents (grounding only; do not use outside knowledge):\n"
             f"{context_block}\n\n"
+            f"Macroeconomic data (live from FRED database):\n{fred_context}\n\n"
             "Task:\n"
-            "- Answer the question using ONLY the context above.\n"
+            "- Answer the question using ONLY the context above (housing docs + macro data).\n"
+            "- When relevant, incorporate the macroeconomic indicators (mortgage rates, CPI, "
+            "unemployment, housing starts) to give a fuller picture.\n"
             "- If you cannot support a claim with the provided context, say you don't have enough data.\n"
             f"- Include citations like [1], [2], ... that correspond to the context documents.{multi_metro_note}"
         )
@@ -385,6 +391,59 @@ class RAGEngine:
                 """
             )
             conn.commit()
+
+    # ---------------------------
+    # FRED macro context (SQLite)
+    # ---------------------------
+
+    def _get_fred_context(self) -> str:
+        """
+        Query latest FRED macro data directly from SQLite.
+        Returns a formatted text block for injection into the LLM prompt.
+        FRED data is structured/numerical — no need for vector embeddings.
+        """
+        series_labels = {
+            "MORTGAGE30US": ("30yr Fixed Mortgage Rate", "%"),
+            "CPIAUCSL": ("CPI (Consumer Price Index)", ""),
+            "UNRATE": ("Unemployment Rate", "%"),
+            "HOUST": ("Housing Starts (thousands)", "K units"),
+        }
+        try:
+            with sqlite3.connect(self.cfg.db_path) as conn:
+                cur = conn.cursor()
+                lines = ["Current US Macroeconomic Indicators (from FRED / Federal Reserve):"]
+                for series_id, (label, unit) in series_labels.items():
+                    cur.execute(
+                        "SELECT period_date, value FROM fred_metrics "
+                        "WHERE series_id = ? ORDER BY period_date DESC LIMIT 1",
+                        (series_id,),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        date_str, value = row[0], row[1]
+                        lines.append(f"  {label}: {value:.2f}{unit} (as of {date_str})")
+                    else:
+                        lines.append(f"  {label}: N/A")
+
+                # Also include recent mortgage rate trend (last 4 weeks)
+                cur.execute(
+                    "SELECT period_date, value FROM fred_metrics "
+                    "WHERE series_id = 'MORTGAGE30US' "
+                    "ORDER BY period_date DESC LIMIT 4"
+                )
+                rate_rows = cur.fetchall()
+                if len(rate_rows) >= 2:
+                    latest = rate_rows[0][1]
+                    oldest = rate_rows[-1][1]
+                    direction = "rising" if latest > oldest else "falling" if latest < oldest else "flat"
+                    lines.append(
+                        f"  Mortgage rate trend (last {len(rate_rows)} weeks): "
+                        f"{oldest:.2f}% -> {latest:.2f}% ({direction})"
+                    )
+
+                return "\n".join(lines)
+        except Exception:
+            return "Macroeconomic data: unavailable"
 
     # ---------------------------
     # Retrieval
@@ -473,7 +532,11 @@ class RAGEngine:
             "days_on_market: median days on market\n"
             "inventory: active listings count\n"
             "price_drop_pct: percentage of listings with a price reduction\n"
-            "mortgage_rate_30yr: 30yr fixed rate from Federal Reserve\n"
+            "homes_sold: total homes sold in the period\n"
+            "new_listings: new listings added in the period\n"
+            "months_of_supply: months of inventory at current sales pace\n"
+            "Note: FRED macro data (mortgage rates, CPI, unemployment, housing starts) "
+            "is injected separately from live SQL queries.\n"
         )
         fallback_meta = {
             self.cfg.meta_metro_key: "ALL",
@@ -516,6 +579,9 @@ class RAGEngine:
         return (
             "You are a housing market analyst for HomeSignal. "
             "Answer ONLY using the retrieved context provided in the user message. "
+            "You have two data sources: (1) housing market documents from Redfin with metro-level metrics, "
+            "and (2) live macroeconomic data from FRED (mortgage rates, CPI, unemployment, housing starts). "
+            "Use both sources when relevant to give comprehensive answers. "
             "If the context does not contain the answer, say what you do not know rather than guessing. "
             "Always include citations to the provided context documents using bracketed indices like [1], [2]. "
             "For multi-metro comparisons, organize your response clearly by metro with headers or bullets. "
@@ -560,7 +626,7 @@ class RAGEngine:
             return f"18-month trend summary: {metro}"
         state = meta.get(self.cfg.meta_state_key, "Unknown state")
         period_date = meta.get(self.cfg.meta_period_key, "Unknown period")
-        return f"Redfin/FRED snapshot: {metro}, {state} ({period_date})"
+        return f"Redfin snapshot: {metro}, {state} ({period_date})"
 
     def _is_property_valuation_question(self, question: str) -> bool:
         q = question.lower()
