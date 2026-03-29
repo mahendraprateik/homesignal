@@ -11,7 +11,6 @@ Run:
 
 from __future__ import annotations
 
-import html
 import os
 import sys
 import threading
@@ -73,6 +72,9 @@ def cached_get_trend_series(metro_name: str, months: int = 12):
 # Data refresh (background thread)
 # ---------------------------------------------------------------------------
 
+_REFRESH_TIMEOUT_SECONDS = 600  # 10-minute timeout for data refresh
+
+
 def _trigger_refresh(force: bool = False) -> None:
     if st.session_state.get("refresh_running"):
         return
@@ -93,6 +95,18 @@ def _trigger_refresh(force: bool = False) -> None:
 
     t = threading.Thread(target=_worker, daemon=True)
     t.start()
+
+    # Watchdog: if the worker hasn't finished after the timeout, unblock the UI.
+    def _watchdog() -> None:
+        t.join(timeout=_REFRESH_TIMEOUT_SECONDS)
+        if t.is_alive():
+            st.session_state.refresh_result = {
+                "errors": [f"Refresh timed out after {_REFRESH_TIMEOUT_SECONDS}s"]
+            }
+            st.session_state.refresh_running = False
+            st.session_state.refresh_done = True
+
+    threading.Thread(target=_watchdog, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +165,92 @@ h2, h3 {
     background: #FFFFFF !important;
     padding: 4px 8px !important;
     margin-bottom: 8px !important;
+}
+
+/* ── Chat answer typography ── */
+[data-testid="stChatMessage"] p {
+    margin: 0 0 0.7em 0 !important;
+    line-height: 1.7 !important;
+    color: #2C2C2E;
+}
+[data-testid="stChatMessage"] p:last-child { margin-bottom: 0 !important; }
+
+[data-testid="stChatMessage"] h3,
+[data-testid="stChatMessage"] h4 {
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 600 !important;
+    font-size: 0.95rem !important;
+    color: #1C1C1E !important;
+    margin: 1.1em 0 0.4em 0 !important;
+    letter-spacing: 0.01em !important;
+}
+[data-testid="stChatMessage"] h3:first-child,
+[data-testid="stChatMessage"] h4:first-child { margin-top: 0 !important; }
+
+[data-testid="stChatMessage"] ul,
+[data-testid="stChatMessage"] ol {
+    margin: 0.3em 0 0.8em 0 !important;
+    padding-left: 1.4em !important;
+}
+[data-testid="stChatMessage"] li {
+    margin-bottom: 0.35em !important;
+    line-height: 1.65 !important;
+    color: #2C2C2E;
+}
+[data-testid="stChatMessage"] li::marker {
+    color: #0D7377;
+}
+
+[data-testid="stChatMessage"] strong {
+    font-weight: 600;
+    color: #1C1C1E;
+}
+
+/* ── Chat tables ── */
+[data-testid="stChatMessage"] table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 0.6em 0 1em 0;
+    font-size: 0.88rem;
+    border: 1px solid #E0DDD8;
+    border-radius: 8px;
+    overflow: hidden;
+}
+[data-testid="stChatMessage"] thead th {
+    background: #F5F3F0;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #5A5A5A;
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 2px solid #0D7377;
+}
+[data-testid="stChatMessage"] tbody td {
+    padding: 9px 14px;
+    border-bottom: 1px solid #EDEBE7;
+    color: #2C2C2E;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.86rem;
+}
+[data-testid="stChatMessage"] tbody tr:last-child td {
+    border-bottom: none;
+}
+[data-testid="stChatMessage"] tbody tr:hover {
+    background: rgba(13, 115, 119, 0.04);
+}
+
+/* ── Inline code in chat ── */
+[data-testid="stChatMessage"] code {
+    background: #F5F3F0;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.85em;
+    color: #0D7377;
 }
 
 .stButton > button {

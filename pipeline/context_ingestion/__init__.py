@@ -50,7 +50,10 @@ def main(sources: Optional[List[Dict[str, Any]]] = None) -> None:
     print(f"Collection: {cfg.collection_name}")
     print(f"ChromaDB dir: {cfg.chroma_dir}")
 
-    embedding_fn = SentenceTransformerEmbeddingFunction(cfg.embedding_model_name)
+    embedding_fn = SentenceTransformerEmbeddingFunction(
+        cfg.embedding_model_name,
+        cfg.embedding_cache_dir,
+    )
     collection = get_or_create_collection(cfg, embedding_fn)
 
     total_inserted = 0

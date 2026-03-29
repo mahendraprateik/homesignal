@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from typing import Any, Dict, List, Optional
 
 from backend.rag import Config, RAGEngine
@@ -50,8 +51,20 @@ class ChatEngine:
         self._claude = self._rag._claude
         self._metro_alias_map = self._rag._metro_alias_map
 
-        # Tracks tool sources for the current query
-        self._last_tool_sources: List[str] = []
+        # Thread-local storage for tool sources to avoid leaking between
+        # concurrent Streamlit sessions sharing the singleton ChatEngine.
+        self._local = threading.local()
+
+    @property
+    def _tool_sources(self) -> list:
+        """Lazily initialize thread-local tool_sources list."""
+        if not hasattr(self._local, "tool_sources"):
+            self._local.tool_sources = []
+        return self._local.tool_sources
+
+    @_tool_sources.setter
+    def _tool_sources(self, value: list) -> None:
+        self._local.tool_sources = value
 
     # ---------------------------
     # Public API
@@ -108,7 +121,7 @@ class ChatEngine:
             return rag_result
 
         # Step 2: Build prompt with RAG context + SQL tools for Claude
-        self._last_tool_sources = []
+        self._tool_sources = []
 
         rag_context = self._format_rag_context(rag_result)
         metro_instruction = (
@@ -136,9 +149,9 @@ class ChatEngine:
         sources = rag_result.get("sources", [])
         confidence = rag_result.get("confidence", "low")
 
-        if self._last_tool_sources:
+        if self._tool_sources:
             confidence = "high"
-            sources = sources + self._last_tool_sources
+            sources = sources + self._tool_sources
 
         return {
             "answer": answer.strip(),
@@ -184,7 +197,7 @@ class ChatEngine:
             return json.dumps({"error": f"No data found for {canonical}"})
 
         d = dict(row)
-        self._last_tool_sources.append(
+        self._tool_sources.append(
             f"HomeSignal DB (live query): {canonical} ({d.get('period_date', '?')})"
         )
         return json.dumps(d, default=str)
@@ -201,7 +214,7 @@ class ChatEngine:
             return json.dumps({"error": "No mortgage rate data found"})
 
         d = dict(row)
-        self._last_tool_sources.append(
+        self._tool_sources.append(
             f"HomeSignal DB (live query): FRED MORTGAGE30US ({d['period_date']})"
         )
         return json.dumps({"rate_pct": d["value"], "as_of": d["period_date"]})
@@ -224,7 +237,7 @@ class ChatEngine:
 
             if row:
                 results[canonical] = dict(row)
-                self._last_tool_sources.append(
+                self._tool_sources.append(
                     f"HomeSignal DB (live query): {canonical} ({dict(row).get('period_date', '?')})"
                 )
             else:
@@ -261,7 +274,7 @@ class ChatEngine:
             ).fetchall()
 
         results = [dict(r) for r in rows]
-        self._last_tool_sources.append(
+        self._tool_sources.append(
             f"HomeSignal DB (live query): top metros by {metric} ({latest_period})"
         )
         return json.dumps(results, default=str)
@@ -379,7 +392,15 @@ class ChatEngine:
             "current price, then reference context documents for how it has trended.\n"
             "If neither source has the answer, say you don't have enough data.\n"
             "For multi-metro comparisons, organize clearly by metro.\n"
-            "Be thorough but focused; avoid repeating context verbatim."
+            "Be thorough but focused; avoid repeating context verbatim.\n\n"
+            "**Formatting rules (always follow):**\n"
+            "- Structure every answer with clear paragraphs separated by blank lines.\n"
+            "- Use **bold** for key metrics, metro names, and important terms.\n"
+            "- Use bullet points (- ) for lists of 3+ related items.\n"
+            "- When presenting numeric comparisons across metros or time periods, use a markdown table "
+            "with a header row and alignment (e.g. | Metric | Value |).\n"
+            "- Use ### headings to separate distinct sections when the answer covers multiple topics.\n"
+            "- Keep paragraphs short (2-4 sentences max)."
         )
 
     def _build_messages(

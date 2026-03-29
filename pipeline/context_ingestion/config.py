@@ -15,7 +15,8 @@ from typing import Any, Dict, List
 class Config:
     chroma_dir: str = "data/chroma_db/"
     collection_name: str = "housing_context"
-    embedding_model_name: str = "all-MiniLM-L6-v2"
+    embedding_model_name: str = "BAAI/bge-small-en-v1.5"
+    embedding_cache_dir: str = "~/.cache/homesignal/sentence_transformers"
 
     # Chunking
     min_chunk_words: int = 80

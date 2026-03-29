@@ -7,14 +7,23 @@ Used by the frontend for rendering values, cleaning AI output, etc.
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any, Optional
 
-import pandas as pd
+
+def _is_na(x: Any) -> bool:
+    """Check if a value is None or NaN without requiring pandas."""
+    if x is None:
+        return True
+    try:
+        return isinstance(x, float) and math.isnan(x)
+    except (TypeError, ValueError):
+        return False
 
 
 def format_money(x: Any) -> str:
-    if x is None or pd.isna(x):
+    if _is_na(x):
         return "N/A"
     try:
         v = float(x)
@@ -24,7 +33,7 @@ def format_money(x: Any) -> str:
 
 
 def format_number(x: Any) -> str:
-    if x is None or pd.isna(x):
+    if _is_na(x):
         return "N/A"
     try:
         return f"{float(x):,.0f}"
@@ -33,7 +42,7 @@ def format_number(x: Any) -> str:
 
 
 def format_pct(x: Any) -> str:
-    if x is None or pd.isna(x):
+    if _is_na(x):
         return "N/A"
     try:
         return f"{float(x):.2f}%"
@@ -45,8 +54,12 @@ def normalize_price_drop_pct_for_display(x: Any) -> Optional[float]:
     """
     Redfin's PRICE_DROPS can be stored either as 0-100 or 0-1.
     Normalise to 0-100 for UI display.
+
+    Note: Values below 1.0 are assumed to be ratios (0-1 scale).
+    Legitimate percentages below 1% (e.g. 0.5%) are uncommon in
+    Redfin price-drop data and will be scaled up.
     """
-    if x is None or pd.isna(x):
+    if _is_na(x):
         return None
     try:
         v = float(x)
@@ -57,20 +70,8 @@ def normalize_price_drop_pct_for_display(x: Any) -> Optional[float]:
         return None
 
 
-def answer_with_superscript_citations(answer: str) -> str:
-    """
-    Remove ALL citation markers from an answer text.
-
-    Strips bracket citations [1], superscript <sup>1</sup>,
-    and trailing "Sources: ..." fallback lines.
-    """
-    if not answer:
-        return ""
-    answer = re.sub(r"(?im)^\s*Sources:\s*.*$", "", answer).strip()
-    answer = re.sub(r"<sup>\s*\d+\s*</sup>", "", answer, flags=re.IGNORECASE)
-    answer = re.sub(r"\[\s*\d+\s*\]", "", answer)
-    answer = re.sub(r"\s{2,}", " ", answer).strip()
-    return answer
+# Re-export from shared module to maintain backward compatibility for frontend imports
+from backend.formatting_utils import answer_with_superscript_citations  # noqa: F401
 
 
 def render_chat_answer_preserving_dollars(text: str) -> str:
@@ -90,9 +91,14 @@ def clean_brief_for_html(text: str) -> str:
     Handles: **bold** → <strong>, | → —, leading header lines like
     "**HomeSignal Daily Brief — ...**" are stripped entirely since the
     UI already has its own header.
+
+    HTML-escapes the input first to prevent XSS via AI-generated content.
     """
     if not text:
         return ""
+    # HTML-escape first to prevent injection via AI output
+    import html as _html
+    text = _html.escape(text)
     # Strip leading header line (e.g. "**HomeSignal Daily Brief — Phoenix, AZ Metro | March 29, 2026**")
     text = re.sub(
         r"^\s*\*{0,2}HomeSignal\s+Daily\s+Brief[^*]*\*{0,2}\s*",
@@ -111,13 +117,4 @@ def clean_brief_for_html(text: str) -> str:
     return text
 
 
-def truncate_tooltip_text(text: str, max_chars: int = 150) -> str:
-    """Truncate tooltip text to max_chars, appending '...' when truncated."""
-    if text is None:
-        return ""
-    s = str(text).strip()
-    if len(s) <= max_chars:
-        return s
-    if max_chars <= 3:
-        return s[:max_chars]
-    return s[: max_chars - 3].rstrip() + "..."
+from backend.formatting_utils import truncate_tooltip_text  # noqa: F401

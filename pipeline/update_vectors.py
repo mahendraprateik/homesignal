@@ -48,7 +48,9 @@ class Config:
 
     redfin_table: str = "redfin_metrics"
 
-    embedding_model_name: str = "all-MiniLM-L6-v2"
+    embedding_model_name: str = "BAAI/bge-small-en-v1.5"
+    embedding_cache_dir: str = "~/.cache/homesignal/sentence_transformers"
+    chroma_add_batch_size: int = 16
 
     # Progress logging
     log_every: int = 25
@@ -72,9 +74,18 @@ class SentenceTransformerEmbeddingFunction:
     Minimal adapter so Chroma can call a local sentence-transformers model.
     """
 
-    def __init__(self, model_name: str) -> None:
-        # Note: first run may download the model weights if not cached.
-        self.model = SentenceTransformer(model_name)
+    def __init__(
+        self,
+        model_name: str,
+        cache_dir: str,
+    ) -> None:
+        self.model_name = model_name
+        self.cache_dir = os.path.expanduser(cache_dir)
+        os.makedirs(self.cache_dir, exist_ok=True)
+        self.model = SentenceTransformer(
+            model_name,
+            cache_folder=self.cache_dir,
+        )
 
     def __call__(self, input: List[str]) -> List[List[float]]:
         embeddings = self.model.encode(
@@ -358,7 +369,10 @@ def main() -> None:
         if after != before:
             print(f"Deduplicated Redfin rows: {before:,} -> {after:,}")
 
-        embedding_function = SentenceTransformerEmbeddingFunction(cfg.embedding_model_name)
+        embedding_function = SentenceTransformerEmbeddingFunction(
+            cfg.embedding_model_name,
+            cfg.embedding_cache_dir,
+        )
 
         # Recreate collection from scratch
         collection = _clear_and_create_collection(cfg, embedding_function)
@@ -368,7 +382,7 @@ def main() -> None:
         _print_header("Embedding + adding to Chroma")
 
         # Batch add to keep memory stable
-        batch_size = 64
+        batch_size = cfg.chroma_add_batch_size
         total = len(documents)
 
         start_ts = datetime.now(timezone.utc)

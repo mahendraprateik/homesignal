@@ -8,9 +8,7 @@ deduplicates against existing content, and batch-inserts new documents.
 
 from __future__ import annotations
 
-import hashlib
 import os
-import re
 from typing import List
 
 import chromadb
@@ -25,31 +23,27 @@ from .models import ProcessedChunk
 # ---------------------------------------------------------------------------
 
 class SentenceTransformerEmbeddingFunction:
-    def __init__(self, model_name: str) -> None:
+    def __init__(
+        self,
+        model_name: str,
+        cache_dir: str,
+    ) -> None:
         self._model_name = model_name
-        self.model = SentenceTransformer(model_name)
-
-    def name(self) -> str:
-        return self._model_name
+        self._cache_dir = os.path.expanduser(cache_dir)
+        os.makedirs(self._cache_dir, exist_ok=True)
+        self._model = SentenceTransformer(
+            model_name,
+            cache_folder=self._cache_dir,
+        )
 
     def __call__(self, input: List[str]) -> List[List[float]]:
-        embeddings = self.model.encode(
+        embeddings = self._model.encode(
             input,
             show_progress_bar=False,
             convert_to_numpy=True,
             normalize_embeddings=True,
         )
         return embeddings.tolist()
-
-
-# ---------------------------------------------------------------------------
-# Content hashing for deduplication
-# ---------------------------------------------------------------------------
-
-def content_hash(text: str) -> str:
-    """Hash normalized text for exact deduplication."""
-    normalized = re.sub(r"\s+", " ", text.lower().strip())
-    return hashlib.sha256(normalized.encode()).hexdigest()[:16]
 
 
 # ---------------------------------------------------------------------------

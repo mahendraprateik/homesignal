@@ -23,7 +23,7 @@ import argparse
 import sys
 import time
 from datetime import datetime, timezone
-from typing import Callable, Optional
+from typing import Callable
 
 from dotenv import load_dotenv
 

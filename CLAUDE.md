@@ -34,7 +34,7 @@ homesignal/
 |-------|-----------|
 | Web UI | Streamlit |
 | LLM | Claude Opus 4.6 (`claude-opus-4-6`), Haiku for tooltips |
-| Embeddings | `all-MiniLM-L6-v2` (local, sentence-transformers) |
+| Embeddings | `BAAI/bge-small-en-v1.5` (local, sentence-transformers) |
 | Vector DB | ChromaDB (persistent, `data/chroma_db/`) |
 | Relational DB | SQLite (`data/homesignal.db`) |
 | Charts | Plotly |
@@ -93,7 +93,7 @@ FRED data is NOT embedded in vectors — it is queried from SQLite at RAG query 
 - **Multi-metro:** Retrieves top-K per metro independently, deduplicates
 - **Guardrails:** Rejects future predictions and property valuations (early return)
 - **Confidence:** `high` (≥3 market docs), `medium` (≥1), `low` (0 → early return)
-- **FRED context:** `_get_fred_context()` queries SQLite for latest macro data (mortgage rate, CPI, unemployment, housing starts) and injects into LLM prompt at query time — not embedded in vectors
+- **FRED context:** FRED macro data (mortgage rates, CPI, unemployment, housing starts) is NOT injected into RAGEngine prompts. It is available only through ChatEngine's SQL tools (`query_mortgage_rate`, etc.) during chat — not embedded in vectors
 - **Grounding:** Metric definitions doc cached in `self._cached_metric_def` at init; appended to every query context
 - **Citations:** Enforces `[1]`, `[2]` markers; injects fallback if Claude omits them
 - **Feedback:** `_ensure_feedback_table()` called in `__init__`; `log_feedback()` just inserts
@@ -123,8 +123,8 @@ The single interface between frontend and backend. The frontend NEVER imports `s
 ## Key Conventions
 
 - Redfin filter: "All Residential", non-seasonally-adjusted, last 18 months; top-N per geography (metro=20, city/county/neighborhood=100, zip=200, state/national=all)
-- FRED data: stored in SQLite only; queried live at RAG time via `_get_fred_context()` — NOT embedded in ChromaDB
+- FRED data: stored in SQLite only; accessed via ChatEngine SQL tools at chat time — NOT embedded in ChromaDB
 - All data ingestion (download, clean, load) consolidated in `pipeline/data_ingestion.py`
-- Do not add `load_dotenv()` calls outside `RAGEngine.__init__`
+- Do not add `load_dotenv()` calls in backend/ modules outside `RAGEngine.__init__` (pipeline/eval CLI scripts may use their own `load_dotenv()` for standalone execution)
 - Do not call `_get_metric_definition_doc()` in query path — use `self._cached_metric_def`
 - Write-path DB calls use raw `sqlite3.connect()`; read-path uses `_db_read_df` / `_db_read_scalar`

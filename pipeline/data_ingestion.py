@@ -111,10 +111,6 @@ class Config:
 # Shared helpers
 # ===========================================================================
 
-def _log(msg: str, log: Callable[[str], None] = print) -> None:
-    log(msg)
-
-
 def _header(step: str, log: Callable[[str], None] = print) -> None:
     log(f"\n=== {step} ===")
 
@@ -460,40 +456,6 @@ def ingest_fred(
 # ===========================================================================
 # Full pipeline
 # ===========================================================================
-
-def run_full_ingestion(
-    cfg: Config = Config(),
-    log: Callable[[str], None] = print,
-    download: bool = True,
-) -> dict:
-    """
-    Run the complete data ingestion pipeline:
-      1. Download Redfin files from S3
-      2. Clean and load Redfin data into SQLite
-      3. Fetch and load FRED data into SQLite
-
-    Returns a summary dict with row counts and errors.
-    """
-    load_dotenv()
-
-    result = {
-        "redfin_downloaded": (0, 0),
-        "redfin_rows": 0,
-        "fred_rows": 0,
-    }
-
-    if download:
-        result["redfin_downloaded"] = download_redfin(cfg, log)
-
-    result["redfin_rows"] = ingest_redfin(cfg, log)
-    result["fred_rows"] = ingest_fred(cfg, log)
-
-    _header("Ingestion Complete", log)
-    log(f"  Redfin: {result['redfin_rows']:,} rows loaded")
-    log(f"  FRED:   {result['fred_rows']:,} rows loaded")
-
-    return result
-
 
 # ===========================================================================
 # CLI

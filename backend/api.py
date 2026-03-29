@@ -12,6 +12,7 @@ All functions are plain Python (no Streamlit dependency) so any frontend
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -98,11 +99,22 @@ def _db_read_scalar(query: str, params: Tuple[Any, ...] = ()) -> Any:
 # MoM helper (used by metric computation)
 # ---------------------------------------------------------------------------
 
+def _is_na(x: Any) -> bool:
+    """Check if a value is None or NaN."""
+    if x is None:
+        return True
+    try:
+        import math
+        return isinstance(x, float) and math.isnan(x)
+    except (TypeError, ValueError):
+        return False
+
+
 def mom_percent(cur_val: Any, prev_val: Any) -> Optional[float]:
     """Compute month-over-month percent change: (cur - prev) / prev * 100."""
-    if cur_val is None or pd.isna(cur_val):
+    if _is_na(cur_val):
         return None
-    if prev_val is None or pd.isna(prev_val):
+    if _is_na(prev_val):
         return None
     try:
         prev = float(prev_val)
@@ -351,22 +363,19 @@ class TooltipCacheRow:
 def get_tooltip_cache(
     metro_name: str, state: Optional[str], period_date: str, metric_key: str
 ) -> Optional[TooltipCacheRow]:
-    with sqlite3.connect(DB_PATH) as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT tooltip_text, generated_at
-            FROM ai_tooltips
-            WHERE metro_name=? AND (state=? OR (state IS NULL AND ? IS NULL))
-              AND period_date=? AND metric_key=?
-            LIMIT 1
-            """,
-            (metro_name, state, state, period_date, metric_key),
-        )
-        row = cur.fetchone()
-        if not row:
-            return None
-        return TooltipCacheRow(tooltip_text=row[0], generated_at=row[1])
+    row = _db_read_df(
+        """
+        SELECT tooltip_text, generated_at
+        FROM ai_tooltips
+        WHERE metro_name=? AND (state=? OR (state IS NULL AND ? IS NULL))
+          AND period_date=? AND metric_key=?
+        LIMIT 1
+        """,
+        (metro_name, state, state, period_date, metric_key),
+    )
+    if row.empty:
+        return None
+    return TooltipCacheRow(tooltip_text=row.iloc[0]["tooltip_text"], generated_at=row.iloc[0]["generated_at"])
 
 
 def _upsert_tooltip_cache(
@@ -391,7 +400,7 @@ def _upsert_tooltip_cache(
 
 def _generate_tooltip_insight(metro_name: str, period_date: str) -> str:
     """Generate a one-sentence tooltip insight via RAG (Haiku)."""
-    from home_signal_frontend.formatting import answer_with_superscript_citations
+    from backend.formatting_utils import answer_with_superscript_citations
 
     rag = _get_rag_tooltip()
     question = (
@@ -425,41 +434,65 @@ def get_or_create_tooltips(
     Returns:
         (tooltip_texts, generated_ats)
     """
-    from home_signal_frontend.formatting import truncate_tooltip_text
+    from backend.formatting_utils import truncate_tooltip_text
 
     metric_key = "median_sale_price"
     tooltip_texts: List[str] = []
     generated_ats: List[str] = []
 
     total = len(trend_df)
-    for idx, (_, row) in enumerate(trend_df.iterrows()):
+    completed = 0
+    ordered_periods: List[str] = []
+    result_by_period: Dict[str, Tuple[str, str]] = {}
+    missing_periods: List[str] = []
+
+    for _, row in trend_df.iterrows():
         period_date = str(row["period_date"])
+        ordered_periods.append(period_date)
 
         cached = get_tooltip_cache(metro_name, state, period_date, metric_key)
         if cached:
-            tooltip_texts.append(truncate_tooltip_text(cached.tooltip_text))
-            generated_ats.append(cached.generated_at)
+            result_by_period[period_date] = (
+                truncate_tooltip_text(cached.tooltip_text),
+                cached.generated_at,
+            )
+            completed += 1
             if on_progress:
-                on_progress(idx + 1, total)
+                on_progress(completed, total)
             continue
 
-        tooltip_text = _generate_tooltip_insight(metro_name, period_date)
-        tooltip_text = truncate_tooltip_text(tooltip_text, max_chars=150)
-        generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        missing_periods.append(period_date)
 
-        _upsert_tooltip_cache(
-            metro_name=metro_name,
-            state=state,
-            period_date=period_date,
-            metric_key=metric_key,
-            tooltip_text=tooltip_text,
-            generated_at=generated_at,
-        )
+    if missing_periods:
+        max_workers = min(4, len(missing_periods))
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            future_to_period = {
+                ex.submit(_generate_tooltip_insight, metro_name, period): period
+                for period in missing_periods
+            }
+            for fut in as_completed(future_to_period):
+                period_date = future_to_period[fut]
+                tooltip_text = truncate_tooltip_text(fut.result(), max_chars=150)
+                generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+                # Keep DB writes serialized to avoid SQLite lock contention.
+                _upsert_tooltip_cache(
+                    metro_name=metro_name,
+                    state=state,
+                    period_date=period_date,
+                    metric_key=metric_key,
+                    tooltip_text=tooltip_text,
+                    generated_at=generated_at,
+                )
+                result_by_period[period_date] = (tooltip_text, generated_at)
+                completed += 1
+                if on_progress:
+                    on_progress(completed, total)
+
+    for period_date in ordered_periods:
+        tooltip_text, generated_at = result_by_period[period_date]
         tooltip_texts.append(tooltip_text)
         generated_ats.append(generated_at)
-        if on_progress:
-            on_progress(idx + 1, total)
 
     return tooltip_texts, generated_ats
 
@@ -471,22 +504,19 @@ def get_or_create_tooltips(
 def _get_brief_cache(
     metro_name: str, state: Optional[str], brief_date: str
 ) -> Optional[Tuple[str, str]]:
-    with sqlite3.connect(DB_PATH) as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT brief_text, generated_at
-            FROM ai_briefs
-            WHERE metro_name=? AND (state=? OR (state IS NULL AND ? IS NULL))
-              AND brief_date=?
-            LIMIT 1
-            """,
-            (metro_name, state, state, brief_date),
-        )
-        row = cur.fetchone()
-        if not row:
-            return None
-        return row[0], row[1]
+    row = _db_read_df(
+        """
+        SELECT brief_text, generated_at
+        FROM ai_briefs
+        WHERE metro_name=? AND (state=? OR (state IS NULL AND ? IS NULL))
+          AND brief_date=?
+        LIMIT 1
+        """,
+        (metro_name, state, state, brief_date),
+    )
+    if row.empty:
+        return None
+    return row.iloc[0]["brief_text"], row.iloc[0]["generated_at"]
 
 
 def _upsert_brief_cache(
