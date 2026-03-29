@@ -34,8 +34,9 @@ class Config:
     chroma_dir: str = "data/chroma_db/"
     collection_name: str = "housing_market"
 
-    # Embeddings (local)
-    embedding_model_name: str = "all-MiniLM-L6-v2"
+    # Embeddings (local, persisted cache)
+    embedding_model_name: str = "BAAI/bge-small-en-v1.5"
+    embedding_cache_dir: str = "~/.cache/homesignal/sentence_transformers"
 
     # Retrieval
     top_k: int = 5
@@ -77,8 +78,12 @@ class RAGEngine:
         if not anthropic_api_key:
             raise RuntimeError("FAIL: ANTHROPIC_API_KEY not found in .env")
         self._claude = anthropic.Anthropic(api_key=anthropic_api_key)
-
-        self._embedder = SentenceTransformer(self.cfg.embedding_model_name)
+        cache_dir = os.path.expanduser(self.cfg.embedding_cache_dir)
+        os.makedirs(cache_dir, exist_ok=True)
+        self._embedder = SentenceTransformer(
+            self.cfg.embedding_model_name,
+            cache_folder=cache_dir,
+        )
 
         self._chroma_client = chromadb.PersistentClient(path=self.cfg.chroma_dir)
         self._collection = self._chroma_client.get_collection(
@@ -278,15 +283,6 @@ class RAGEngine:
                 "detected_metros": detected_metros,
             }
 
-        if confidence == "low":
-            return {
-                "answer": "I don't have enough data to answer that. [1]",
-                "sources": [metric_def_source_desc],
-                "retrieved_docs": [],
-                "confidence": "low",
-                "detected_metros": detected_metros,
-            }
-
         # --- Build numbered context block for citations ---
         context_items: List[Dict[str, str]] = []
         sources: List[str] = []
@@ -313,12 +309,12 @@ class RAGEngine:
 
         user_prompt = (
             f"User question:\n{question}\n\n"
-            "Context documents (grounding only; do not use outside knowledge):\n"
+            "Context documents:\n"
             f"{context_block}\n\n"
             "Task:\n"
-            "- Answer the question using ONLY the context above.\n"
-            "- If you cannot support a claim with the provided context, say you don't have enough data.\n"
-            f"- Include citations like [1], [2], ... that correspond to the context documents.{multi_metro_note}"
+            "- Use the provided context as primary evidence when it is relevant.\n"
+            "- You may use broader housing/economic reasoning where context is incomplete; clearly label such points as general reasoning.\n"
+            f"- Include citations like [1], [2], ... for claims supported by the provided context.{multi_metro_note}"
         )
 
         messages = self._build_messages(conversation_history, user_prompt)
@@ -515,9 +511,10 @@ class RAGEngine:
     def _system_prompt(self) -> str:
         return (
             "You are a housing market analyst for HomeSignal. "
-            "Answer ONLY using the retrieved context provided in the user message. "
-            "If the context does not contain the answer, say what you do not know rather than guessing. "
-            "Always include citations to the provided context documents using bracketed indices like [1], [2]. "
+            "Use provided context documents and query results as your primary evidence base. "
+            "You may also apply general domain knowledge when needed, but clearly distinguish it from data-backed claims. "
+            "When data in context supports a claim, cite it using bracketed indices like [1], [2]. "
+            "If confidence is limited, state assumptions and uncertainty explicitly. "
             "For multi-metro comparisons, organize your response clearly by metro with headers or bullets. "
             "You have access to the prior conversation — use it to resolve follow-up questions and references. "
             "Be thorough but focused; avoid repeating context verbatim."
@@ -579,9 +576,16 @@ class RAGEngine:
 
     def _is_future_prediction_question(self, question: str) -> bool:
         q = question.lower()
-        future_keywords = [
-            "forecast", "predict", "prediction", "expected", "future",
-            "in the next", "next year", "tomorrow", "will ", "will it",
-            "will prices", "will inventory", "will mortgage",
+        # Strong signals: these alone indicate a prediction request
+        strong_keywords = [
+            "forecast", "predict", "prediction", "future",
+            "in the next", "next year", "next month", "tomorrow",
         ]
-        return any(k in q for k in future_keywords)
+        if any(k in q for k in strong_keywords):
+            return True
+        # Weaker signals: require at least two to trigger (reduces false positives)
+        weak_keywords = [
+            "will prices", "will inventory", "will mortgage", "will rates",
+            "will it", "expected to", "going to",
+        ]
+        return sum(1 for k in weak_keywords if k in q) >= 1
