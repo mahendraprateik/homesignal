@@ -1,0 +1,16 @@
+.git
+.gitignore
+.gcloudignore
+
+venv/
+__pycache__/
+*.pyc
+
+.omc/
+.claude/
+
+data/raw/
+
+evals/
+frontend/
+agent-transcripts/
