@@ -21,7 +21,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from google.cloud import storage
+def _get_storage_client():
+    """Lazy import of google.cloud.storage to avoid ImportError when not installed."""
+    from google.cloud import storage
+    return storage.Client()
 
 
 _SYNC_LOCK = threading.Lock()
@@ -61,7 +64,7 @@ def _write_local_marker(path: str, payload: Dict[str, Any]) -> None:
 
 
 def _load_remote_manifest(cfg: CloudSyncConfig) -> Dict[str, Any]:
-    client = storage.Client()
+    client = _get_storage_client()
     blob = client.bucket(cfg.bucket).blob(cfg.manifest_blob_name)
     raw = blob.download_as_text()
     manifest = json.loads(raw)
@@ -137,7 +140,7 @@ def sync_cloud_snapshot_if_needed(force: bool = False) -> Dict[str, Any]:
                 "reason": "Already on latest snapshot",
             }
 
-        client = storage.Client()
+        client = _get_storage_client()
         bucket = client.bucket(cfg.bucket)
         blob = bucket.blob(remote_blob)
         if not blob.exists():

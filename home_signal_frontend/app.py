@@ -323,6 +323,14 @@ def _render_sidebar(metro_names: List[str], metros_df) -> str:
 
 def _render_metric_cards(latest: Dict[str, Any]) -> None:
     """Render dashboard metric cards driven by the semantic model."""
+    period = latest.get("period_date", "")
+    if period:
+        try:
+            pd_dt = datetime.strptime(str(period)[:10], "%Y-%m-%d")
+            st.caption(f"Latest data: {pd_dt.strftime('%B %Y')}")
+        except ValueError:
+            st.caption(f"Latest data: {period}")
+
     card_defs = api.get_dashboard_card_config()
     cols = st.columns(len(card_defs), gap="small")
 
@@ -355,7 +363,7 @@ def _render_metric_cards(latest: Dict[str, Any]) -> None:
             st.metric(
                 card["display_name"],
                 formatter(value),
-                delta=None if delta_val is None else f"{delta_val:.2f}%",
+                delta=None if delta_val is None else f"{delta_val:.2f}% MoM",
                 delta_color=delta_color,
             )
 

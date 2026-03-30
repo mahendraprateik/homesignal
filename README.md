@@ -4,7 +4,7 @@ AI-powered housing market intelligence. Select a metro area and get real-time me
 
 ## How It Works
 
-HomeSignal pulls housing data from **Redfin** and economic indicators from **FRED**, stores everything in SQLite + ChromaDB, and uses **Claude** to generate insights and answer questions.
+HomeSignal pulls housing data from **Redfin** and economic indicators from **FRED**, stores everything in SQLite + ChromaDB, and uses **Claude** to generate insights and answer questions. A centralized **semantic model** (`data/semantic_model.yaml`) drives metric definitions across the entire stack — pipeline, RAG, chat, and frontend.
 
 ### Data Flow
 
@@ -64,11 +64,13 @@ User Question
 |-------|------------|
 | Frontend | Streamlit |
 | LLM | Claude (Opus for answers, Haiku for tooltips) |
-| Embeddings | `BAAI/bge-small-en-v1.5` (local) |
-| Vector DB | ChromaDB |
-| Relational DB | SQLite |
+| Embeddings | `BAAI/bge-small-en-v1.5` (local, sentence-transformers) |
+| Vector DB | ChromaDB (persistent, `data/chroma_db/`) |
+| Relational DB | SQLite (`data/homesignal.db`) |
 | Charts | Plotly |
-| Data Sources | Redfin, FRED API |
+| Data Sources | Redfin (TSV), FRED API |
+| Semantic Model | YAML (`data/semantic_model.yaml`) — single source of truth for all metric definitions |
+| Cloud | GCP Cloud Run, Cloud Build, Cloud Scheduler, GCS |
 
 ## Quickstart
 
@@ -94,19 +96,41 @@ streamlit run home_signal_frontend/app.py
 
 ```
 homesignal/
-├── home_signal_frontend/    # Streamlit UI + display helpers
-├── backend/                 # API layer, RAG engine, chat engine
-├── pipeline/                # Data ingestion, refresh, vector building
-├── data/                    # SQLite DB, ChromaDB vectors, raw files
-└── .env                     # API keys (not committed)
+├── home_signal_frontend/
+│   ├── app.py                  # Streamlit UI (imports only backend.api + formatting)
+│   └── formatting.py           # Pure display helpers (no DB/backend deps)
+├── backend/
+│   ├── api.py                  # Single entry point for all frontend calls
+│   ├── rag.py                  # RAGEngine — retrieval + Claude inference
+│   ├── chat_engine.py          # Hybrid RAG + SQL tool-use engine
+│   ├── cloud_sync.py           # Pull latest data snapshot from GCS
+│   ├── formatting_utils.py     # Shared formatting helpers (used by api + frontend)
+│   └── semantic_model.py       # Loads data/semantic_model.yaml for typed metric access
+├── pipeline/
+│   ├── data_ingestion.py       # Download, clean, load all data → SQLite
+│   ├── refresh.py              # Freshness checks + orchestrates ingestion + vector rebuild
+│   ├── update_vectors.py       # SQLite → ChromaDB vector store
+│   ├── cloud_refresh_job.py    # Entrypoint for scheduled Cloud Build refresh
+│   ├── run_all.py              # Run full pipeline end-to-end
+│   └── context_ingestion/      # Context document ingestion sub-pipeline
+├── data/
+│   ├── homesignal.db           # SQLite database
+│   ├── chroma_db/              # ChromaDB persistent vectors
+│   ├── semantic_model.yaml     # Metric definitions (single source of truth)
+│   └── raw/                    # Redfin TSV.GZ source files
+├── evals/
+│   ├── golden_dataset.json     # Eval test cases
+│   ├── run_evals.py            # RAG evaluation runner
+│   └── smoke_connectivity.py   # Connectivity smoke tests
+├── tests/                      # Unit tests
+├── Dockerfile                  # Container image for Cloud Run
+├── cloudbuild.refresh.yaml     # Cloud Build config for scheduled refresh
+├── .streamlit/config.toml      # Streamlit theme (teal/off-white)
+├── .env                        # API keys (never committed)
+└── .env.gcp.yaml               # Env vars for Cloud Run deploys
 ```
 
 ## GCP Deployment (Cloud Run)
-
-This repo is currently set up to run on Cloud Run with local runtime artifacts:
-
-- `data/homesignal.db` (SQLite)
-- `data/chroma_db/` (Chroma vectors)
 
 ### Current cloud resources
 
@@ -118,13 +142,7 @@ This repo is currently set up to run on Cloud Run with local runtime artifacts:
 - Snapshot manifest: `gs://homesignal-491722-homesignal-data/homesignal/latest.json`
 - Snapshot archives: `gs://homesignal-491722-homesignal-data/homesignal/snapshots/`
 
-### Deployment files used in this repo
-
-- `Dockerfile` - container image for Streamlit app
-- `.gcloudignore` - excludes heavy/local-only paths from source deploys
-- `.env.gcp.yaml` - env var file used for Cloud Run deploys (currently plain text keys)
-
-### Deploy app (as currently configured)
+### Deploy app
 
 ```bash
 gcloud run deploy homesignal-asis \
@@ -141,38 +159,20 @@ gcloud run deploy homesignal-asis \
 
 ## Scheduled Data Refresh (3:00 AM PST)
 
-### Goal
-
-Run refresh in the background daily without user interaction in the app UI.
-
 ### Architecture
 
 1. Cloud Scheduler publishes a daily message to Pub/Sub.
 2. A Cloud Build trigger listens to that topic.
 3. Cloud Build runs `pipeline/cloud_refresh_job.py --skip-context` inside the app image.
 4. Refresh builds a snapshot and uploads `latest.json` + archive to GCS.
-5. App runtime checks manifest periodically and syncs newer snapshot silently.
-6. UI does not expose manual refresh button.
+5. App runtime checks manifest periodically via `backend/cloud_sync.py` and syncs newer snapshots silently.
 
-### Code changes for this flow
-
-- Added `pipeline/cloud_refresh_job.py` (job entrypoint)
-- Added `backend/cloud_sync.py` (pull latest snapshot from GCS)
-- Added `api.maybe_sync_cloud_data()` in `backend/api.py`
-- Added `cached_maybe_sync_cloud_data()` in `home_signal_frontend/app.py`
-- Added `google-cloud-storage` dependency
-- Removed UI refresh controls from sidebar
-
-### Cloud Build Trigger config
+### Cloud Build Trigger
 
 - Trigger name: `homesignal-refresh-daily`
-- Trigger type: Pub/Sub
 - Topic: `projects/homesignal-491722/topics/homesignal-refresh-topic`
 - Build config: `cloudbuild.refresh.yaml`
-- Runner image: `us-central1-docker.pkg.dev/homesignal-491722/cloud-run-source-deploy/homesignal-asis:latest`
-- Refresh command in build step: `cd /app && python pipeline/cloud_refresh_job.py --skip-context`
-
-Create/update trigger:
+- Refresh command: `cd /app && python pipeline/cloud_refresh_job.py --skip-context`
 
 ```bash
 PROJECT_ID=homesignal-491722
@@ -190,15 +190,11 @@ gcloud builds triggers create pubsub \
   --inline-config cloudbuild.refresh.yaml
 ```
 
-### Cloud Scheduler cron config
+### Cloud Scheduler
 
-- Scheduler job: `homesignal-refresh-3am`
-- Schedule: `0 3 * * *`
-- Time zone: `America/Los_Angeles`
+- Job: `homesignal-refresh-3am`
+- Schedule: `0 3 * * *` (America/Los_Angeles)
 - Target: Pub/Sub topic `projects/homesignal-491722/topics/homesignal-refresh-topic`
-- Message body: `{"trigger":"daily-refresh"}`
-
-Create/update scheduler:
 
 ```bash
 PROJECT_ID=homesignal-491722
@@ -220,7 +216,7 @@ gcloud scheduler jobs create pubsub homesignal-refresh-3am \
 
 ### IAM required
 
-- Cloud Build service account needs bucket write access + image pull access:
+Cloud Build service account needs bucket write + image pull access:
 
 ```bash
 PROJECT_ID=homesignal-491722
@@ -238,35 +234,25 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
 
 ## Operations
 
-### Check service logs
-
 ```bash
+# Service logs
 gcloud run services logs read homesignal-asis --region us-central1 --limit 200
-```
 
-### Check refresh build logs
-
-```bash
+# Refresh build logs
 gcloud logging read \
   'resource.type="build" AND protoPayload.resourceName:"triggers/homesignal-refresh-daily"' \
   --limit=200
-```
 
-### Trigger refresh manually
-
-```bash
+# Trigger refresh manually
 gcloud scheduler jobs run homesignal-refresh-3am --location us-central1
-```
 
-### Check latest build status
-
-```bash
+# Check recent builds
 gcloud builds list --limit=10
-gcloud builds describe BUILD_ID
 ```
 
 ## Notes
 
 - Cloud Run local filesystem is ephemeral. Durable data refresh depends on GCS snapshot publish + app sync.
-- Current `.env.gcp.yaml` contains plain text keys for testing. Move to Secret Manager for production.
-- Context refresh (`pipeline/context_ingestion`) is currently skipped in scheduled refresh to reduce runtime and memory pressure.
+- `.env.gcp.yaml` contains plain text keys for testing. Move to Secret Manager for production.
+- Context ingestion (`pipeline/context_ingestion/`) is currently skipped in scheduled refresh to reduce runtime and memory pressure.
+- `google-cloud-storage` is only imported lazily — the app runs locally without GCP credentials.
