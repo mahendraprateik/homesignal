@@ -100,3 +100,171 @@ homesignal/
 ├── data/                    # SQLite DB, ChromaDB vectors, raw files
 └── .env                     # API keys (not committed)
 ```
+
+## GCP Deployment (Cloud Run)
+
+This repo is currently set up to run on Cloud Run with local runtime artifacts:
+
+- `data/homesignal.db` (SQLite)
+- `data/chroma_db/` (Chroma vectors)
+
+### Current cloud resources
+
+- GCP Project: `homesignal-491722`
+- Cloud Run service: `homesignal-asis`
+- Region: `us-central1`
+- Artifact Registry repo: `cloud-run-source-deploy`
+- Runtime data bucket: `gs://homesignal-491722-homesignal-data`
+- Snapshot manifest: `gs://homesignal-491722-homesignal-data/homesignal/latest.json`
+- Snapshot archives: `gs://homesignal-491722-homesignal-data/homesignal/snapshots/`
+
+### Deployment files used in this repo
+
+- `Dockerfile` - container image for Streamlit app
+- `.gcloudignore` - excludes heavy/local-only paths from source deploys
+- `.env.gcp.yaml` - env var file used for Cloud Run deploys (currently plain text keys)
+
+### Deploy app (as currently configured)
+
+```bash
+gcloud run deploy homesignal-asis \
+  --image us-central1-docker.pkg.dev/homesignal-491722/cloud-run-source-deploy/homesignal-asis:latest \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --memory 2Gi \
+  --cpu 1 \
+  --timeout 300 \
+  --max-instances 1 \
+  --env-vars-file .env.gcp.yaml \
+  --quiet
+```
+
+## Scheduled Data Refresh (3:00 AM PST)
+
+### Goal
+
+Run refresh in the background daily without user interaction in the app UI.
+
+### Architecture
+
+1. Cloud Run Job runs `pipeline/cloud_refresh_job.py`.
+2. Job executes pipeline refresh and builds runtime snapshot.
+3. Job uploads snapshot + `latest.json` manifest to GCS.
+4. App runtime checks manifest periodically and syncs newer snapshot silently.
+5. UI does not expose manual refresh button.
+
+### Code changes for this flow
+
+- Added `pipeline/cloud_refresh_job.py` (job entrypoint)
+- Added `backend/cloud_sync.py` (pull latest snapshot from GCS)
+- Added `api.maybe_sync_cloud_data()` in `backend/api.py`
+- Added `cached_maybe_sync_cloud_data()` in `home_signal_frontend/app.py`
+- Added `google-cloud-storage` dependency
+- Removed UI refresh controls from sidebar
+
+### Cloud Run Job config
+
+- Job name: `homesignal-refresh`
+- Region: `us-central1`
+- Command: `python pipeline/cloud_refresh_job.py --skip-context`
+- Memory: `4Gi`
+- CPU: `1`
+- Task timeout: `7200s`
+- Retries: `0`
+
+Deploy/update job:
+
+```bash
+gcloud run jobs deploy homesignal-refresh \
+  --image us-central1-docker.pkg.dev/homesignal-491722/cloud-run-source-deploy/homesignal-asis:latest \
+  --region us-central1 \
+  --memory 4Gi \
+  --cpu 1 \
+  --max-retries 0 \
+  --tasks 1 \
+  --task-timeout 7200 \
+  --env-vars-file .env.gcp.yaml \
+  --command python \
+  --args pipeline/cloud_refresh_job.py,--skip-context \
+  --quiet
+```
+
+### Cloud Scheduler cron config
+
+- Scheduler job: `homesignal-refresh-3am`
+- Schedule: `0 3 * * *`
+- Time zone: `America/Los_Angeles`
+- Trigger: Cloud Run Jobs API `.../jobs/homesignal-refresh:run`
+- Method: `POST` with OAuth service account token
+
+Create/update scheduler:
+
+```bash
+PROJECT_ID=homesignal-491722
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+URI="https://us-central1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT_ID}/jobs/homesignal-refresh:run"
+
+gcloud scheduler jobs create http homesignal-refresh-3am \
+  --location us-central1 \
+  --schedule "0 3 * * *" \
+  --time-zone "America/Los_Angeles" \
+  --uri "$URI" \
+  --http-method POST \
+  --oauth-service-account-email "$SA" \
+  --oauth-token-scope "https://www.googleapis.com/auth/cloud-platform"
+```
+
+If job already exists, use `gcloud scheduler jobs update http ...` with same flags.
+
+### IAM required
+
+- Job service account needs bucket write access:
+
+```bash
+gcloud storage buckets add-iam-policy-binding gs://homesignal-491722-homesignal-data \
+  --member "serviceAccount:770681187461-compute@developer.gserviceaccount.com" \
+  --role roles/storage.objectAdmin
+```
+
+- Scheduler caller service account needs run invocation permission:
+
+```bash
+gcloud projects add-iam-policy-binding homesignal-491722 \
+  --member "serviceAccount:770681187461-compute@developer.gserviceaccount.com" \
+  --role roles/run.invoker
+```
+
+## Operations
+
+### Check service logs
+
+```bash
+gcloud run services logs read homesignal-asis --region us-central1 --limit 200
+```
+
+### Check refresh job logs
+
+```bash
+gcloud logging read \
+  'resource.type="cloud_run_job" AND resource.labels.job_name="homesignal-refresh"' \
+  --limit=200
+```
+
+### Trigger refresh manually
+
+```bash
+gcloud run jobs execute homesignal-refresh --region us-central1 --async
+```
+
+### Check latest execution status
+
+```bash
+gcloud run jobs executions list --job homesignal-refresh --region us-central1 --limit=10
+```
+
+## Notes
+
+- Cloud Run local filesystem is ephemeral. Durable data refresh depends on GCS snapshot publish + app sync.
+- Current `.env.gcp.yaml` contains plain text keys for testing. Move to Secret Manager for production.
+- Context refresh (`pipeline/context_ingestion`) is currently skipped in scheduled job to reduce runtime and memory pressure.

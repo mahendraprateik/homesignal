@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import os
 import sys
-import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -68,45 +67,9 @@ def cached_get_trend_series(metro_name: str, months: int = 12):
     return api.get_trend_series(metro_name, months=months)
 
 
-# ---------------------------------------------------------------------------
-# Data refresh (background thread)
-# ---------------------------------------------------------------------------
-
-_REFRESH_TIMEOUT_SECONDS = 600  # 10-minute timeout for data refresh
-
-
-def _trigger_refresh(force: bool = False) -> None:
-    if st.session_state.get("refresh_running"):
-        return
-
-    st.session_state.refresh_running = True
-    st.session_state.refresh_done = False
-    st.session_state.refresh_result = {}
-
-    def _worker() -> None:
-        try:
-            result = api.run_refresh(force=force)
-            st.session_state.refresh_result = result
-        except Exception as e:
-            st.session_state.refresh_result = {"errors": [str(e)]}
-        finally:
-            st.session_state.refresh_running = False
-            st.session_state.refresh_done = True
-
-    t = threading.Thread(target=_worker, daemon=True)
-    t.start()
-
-    # Watchdog: if the worker hasn't finished after the timeout, unblock the UI.
-    def _watchdog() -> None:
-        t.join(timeout=_REFRESH_TIMEOUT_SECONDS)
-        if t.is_alive():
-            st.session_state.refresh_result = {
-                "errors": [f"Refresh timed out after {_REFRESH_TIMEOUT_SECONDS}s"]
-            }
-            st.session_state.refresh_running = False
-            st.session_state.refresh_done = True
-
-    threading.Thread(target=_watchdog, daemon=True).start()
+@st.cache_data(ttl=900)
+def cached_maybe_sync_cloud_data():
+    return api.maybe_sync_cloud_data()
 
 
 # ---------------------------------------------------------------------------
@@ -319,33 +282,6 @@ def _render_sidebar(metro_names: List[str], metros_df) -> str:
                 f'— {redfin_info.get("latest_period", "N/A")} ({redfin_age})',
                 unsafe_allow_html=True,
             )
-
-            force_refresh = st.toggle("Force refresh", value=False, key="force_refresh_toggle")
-            if st.button("Refresh Data", key="refresh_btn", use_container_width=True):
-                _trigger_refresh(force=force_refresh)
-
-            if st.session_state.get("refresh_running"):
-                st.info("Refresh in progress...")
-            elif st.session_state.get("refresh_done"):
-                res = st.session_state.get("refresh_result", {})
-                parts = []
-                if res.get("fred_updated"):
-                    parts.append("FRED updated")
-                if res.get("redfin_updated"):
-                    parts.append("Redfin updated")
-                if res.get("vectors_rebuilt"):
-                    parts.append("vectors rebuilt")
-                if parts:
-                    st.success(", ".join(parts) + ".")
-                    st.cache_data.clear()
-                    st.cache_resource.clear()
-                elif res.get("errors"):
-                    st.error("Refresh failed: " + str(res["errors"][0]))
-                else:
-                    st.success("Data is already current.")
-                if st.button("Dismiss", key="refresh_dismiss"):
-                    st.session_state.refresh_done = False
-                    st.session_state.refresh_result = {}
 
         default_metro = "Phoenix, AZ metro area"
         if default_metro not in metro_names:
@@ -645,6 +581,18 @@ def _render_chat(metro_name: str) -> None:
 
 def main() -> None:
     st.set_page_config(page_title="HomeSignal", page_icon="\U0001f3e0", layout="wide")
+
+    # Optional cloud snapshot sync (if configured via env vars).
+    # This keeps interactive refresh out of the UI while allowing background
+    # scheduled jobs to publish newer data artifacts.
+    try:
+        sync_result = cached_maybe_sync_cloud_data()
+        if sync_result.get("updated"):
+            st.cache_data.clear()
+            st.cache_resource.clear()
+    except Exception:
+        # Avoid blocking app startup if cloud sync has a transient issue.
+        pass
 
     if "tables_ensured" not in st.session_state:
         api.ensure_ai_tables()
