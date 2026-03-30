@@ -22,6 +22,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import pandas as pd
 
 from backend.chat_engine import ChatEngine
+from backend.cloud_sync import sync_cloud_snapshot_if_needed
 from backend.rag import Config, RAGEngine
 from backend.semantic_model import get_semantic_model
 
@@ -77,6 +78,19 @@ def reset_engines() -> None:
         _rag_engine = None
         _rag_tooltip_engine = None
         _chat_engine = None
+
+
+def maybe_sync_cloud_data(force: bool = False) -> Dict[str, Any]:
+    """
+    Pull latest runtime snapshot from cloud storage if configured.
+
+    If a newer snapshot is applied, reset engine singletons so future calls
+    reopen SQLite/Chroma against the new on-disk data.
+    """
+    result = sync_cloud_snapshot_if_needed(force=force)
+    if result.get("updated"):
+        reset_engines()
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -612,25 +626,3 @@ def log_feedback(
     engine.log_feedback(question, answer, feedback, metro)
 
 
-# ---------------------------------------------------------------------------
-# Pipeline refresh API
-# ---------------------------------------------------------------------------
-
-def run_refresh(force: bool = False) -> Dict[str, Any]:
-    """
-    Run the data refresh pipeline synchronously.
-
-    Returns dict with keys: fred_updated, redfin_updated, vectors_rebuilt, errors.
-    """
-    try:
-        from pipeline.refresh import run_refresh as _run, Config as RefreshConfig
-        result = _run(cfg=RefreshConfig(), force=force)
-        reset_engines()
-        return {
-            "fred_updated": result.fred_updated,
-            "redfin_updated": result.redfin_updated,
-            "vectors_rebuilt": result.vectors_rebuilt,
-            "errors": result.errors,
-        }
-    except Exception as e:
-        return {"fred_updated": False, "redfin_updated": False, "vectors_rebuilt": False, "errors": [str(e)]}
