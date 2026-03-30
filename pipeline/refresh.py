@@ -149,18 +149,6 @@ def check_fred_freshness(cfg: Config) -> FreshnessResult:
 
 
 def check_redfin_freshness(cfg: Config) -> FreshnessResult:
-    has_files = os.path.isdir(cfg.redfin_raw_dir) and any(
-        f.endswith(".gz") for f in os.listdir(cfg.redfin_raw_dir)
-    )
-    if not has_files:
-        return FreshnessResult(
-            source="redfin",
-            is_stale=True,
-            latest_period=None,
-            loaded_at=None,
-            reason="No Redfin TSV files found — will download",
-        )
-
     if not os.path.exists(cfg.db_path):
         return FreshnessResult(
             source="redfin",
@@ -219,12 +207,16 @@ def check_redfin_freshness(cfg: Config) -> FreshnessResult:
     days_old = (today - latest_period).days
 
     if days_old > cfg.redfin_stale_days:
+        has_files = os.path.isdir(cfg.redfin_raw_dir) and any(
+            f.endswith(".gz") for f in os.listdir(cfg.redfin_raw_dir)
+        )
+        extra = " and no local TSV files present" if not has_files else ""
         return FreshnessResult(
             source="redfin",
             is_stale=True,
             latest_period=latest_period_str,
             loaded_at=loaded_at_str,
-            reason=f"Last Redfin data: {latest_period} ({days_old} days ago)",
+            reason=f"Last Redfin data: {latest_period} ({days_old} days ago){extra}",
         )
 
     return FreshnessResult(

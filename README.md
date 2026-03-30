@@ -147,11 +147,12 @@ Run refresh in the background daily without user interaction in the app UI.
 
 ### Architecture
 
-1. Cloud Run Job runs `pipeline/cloud_refresh_job.py`.
-2. Job executes pipeline refresh and builds runtime snapshot.
-3. Job uploads snapshot + `latest.json` manifest to GCS.
-4. App runtime checks manifest periodically and syncs newer snapshot silently.
-5. UI does not expose manual refresh button.
+1. Cloud Scheduler publishes a daily message to Pub/Sub.
+2. A Cloud Build trigger listens to that topic.
+3. Cloud Build runs `pipeline/cloud_refresh_job.py --skip-context` inside the app image.
+4. Refresh builds a snapshot and uploads `latest.json` + archive to GCS.
+5. App runtime checks manifest periodically and syncs newer snapshot silently.
+6. UI does not expose manual refresh button.
 
 ### Code changes for this flow
 
@@ -162,31 +163,31 @@ Run refresh in the background daily without user interaction in the app UI.
 - Added `google-cloud-storage` dependency
 - Removed UI refresh controls from sidebar
 
-### Cloud Run Job config
+### Cloud Build Trigger config
 
-- Job name: `homesignal-refresh`
-- Region: `us-central1`
-- Command: `python pipeline/cloud_refresh_job.py --skip-context`
-- Memory: `4Gi`
-- CPU: `1`
-- Task timeout: `7200s`
-- Retries: `0`
+- Trigger name: `homesignal-refresh-daily`
+- Trigger type: Pub/Sub
+- Topic: `projects/homesignal-491722/topics/homesignal-refresh-topic`
+- Build config: `cloudbuild.refresh.yaml`
+- Runner image: `us-central1-docker.pkg.dev/homesignal-491722/cloud-run-source-deploy/homesignal-asis:latest`
+- Refresh command in build step: `cd /app && python pipeline/cloud_refresh_job.py --skip-context`
 
-Deploy/update job:
+Create/update trigger:
 
 ```bash
-gcloud run jobs deploy homesignal-refresh \
-  --image us-central1-docker.pkg.dev/homesignal-491722/cloud-run-source-deploy/homesignal-asis:latest \
-  --region us-central1 \
-  --memory 4Gi \
-  --cpu 1 \
-  --max-retries 0 \
-  --tasks 1 \
-  --task-timeout 7200 \
-  --env-vars-file .env.gcp.yaml \
-  --command python \
-  --args pipeline/cloud_refresh_job.py,--skip-context \
-  --quiet
+PROJECT_ID=homesignal-491722
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+SA_RESOURCE="projects/${PROJECT_ID}/serviceAccounts/${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+TOPIC_RESOURCE="projects/${PROJECT_ID}/topics/homesignal-refresh-topic"
+
+gcloud builds triggers create pubsub \
+  --name homesignal-refresh-daily \
+  --description "Daily HomeSignal refresh via PubSub trigger" \
+  --region global \
+  --service-account "${SA_RESOURCE}" \
+  --topic "${TOPIC_RESOURCE}" \
+  --subscription-filter "true" \
+  --inline-config cloudbuild.refresh.yaml
 ```
 
 ### Cloud Scheduler cron config
@@ -194,45 +195,45 @@ gcloud run jobs deploy homesignal-refresh \
 - Scheduler job: `homesignal-refresh-3am`
 - Schedule: `0 3 * * *`
 - Time zone: `America/Los_Angeles`
-- Trigger: Cloud Run Jobs API `.../jobs/homesignal-refresh:run`
-- Method: `POST` with OAuth service account token
+- Target: Pub/Sub topic `projects/homesignal-491722/topics/homesignal-refresh-topic`
+- Message body: `{"trigger":"daily-refresh"}`
 
 Create/update scheduler:
 
 ```bash
 PROJECT_ID=homesignal-491722
 PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
-SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
-URI="https://us-central1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT_ID}/jobs/homesignal-refresh:run"
+TOPIC_RESOURCE="projects/${PROJECT_ID}/topics/homesignal-refresh-topic"
+SCHED_AGENT="service-${PROJECT_NUMBER}@gcp-sa-cloudscheduler.iam.gserviceaccount.com"
 
-gcloud scheduler jobs create http homesignal-refresh-3am \
+gcloud pubsub topics add-iam-policy-binding "${TOPIC_RESOURCE}" \
+  --member "serviceAccount:${SCHED_AGENT}" \
+  --role roles/pubsub.publisher
+
+gcloud scheduler jobs create pubsub homesignal-refresh-3am \
   --location us-central1 \
   --schedule "0 3 * * *" \
   --time-zone "America/Los_Angeles" \
-  --uri "$URI" \
-  --http-method POST \
-  --oauth-service-account-email "$SA" \
-  --oauth-token-scope "https://www.googleapis.com/auth/cloud-platform"
+  --topic "${TOPIC_RESOURCE}" \
+  --message-body '{"trigger":"daily-refresh"}'
 ```
-
-If job already exists, use `gcloud scheduler jobs update http ...` with same flags.
 
 ### IAM required
 
-- Job service account needs bucket write access:
+- Cloud Build service account needs bucket write access + image pull access:
 
 ```bash
+PROJECT_ID=homesignal-491722
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+CLOUDBUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
+
 gcloud storage buckets add-iam-policy-binding gs://homesignal-491722-homesignal-data \
-  --member "serviceAccount:770681187461-compute@developer.gserviceaccount.com" \
+  --member "serviceAccount:${CLOUDBUILD_SA}" \
   --role roles/storage.objectAdmin
-```
 
-- Scheduler caller service account needs run invocation permission:
-
-```bash
-gcloud projects add-iam-policy-binding homesignal-491722 \
-  --member "serviceAccount:770681187461-compute@developer.gserviceaccount.com" \
-  --role roles/run.invoker
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+  --member "serviceAccount:${CLOUDBUILD_SA}" \
+  --role roles/artifactregistry.reader
 ```
 
 ## Operations
@@ -243,28 +244,29 @@ gcloud projects add-iam-policy-binding homesignal-491722 \
 gcloud run services logs read homesignal-asis --region us-central1 --limit 200
 ```
 
-### Check refresh job logs
+### Check refresh build logs
 
 ```bash
 gcloud logging read \
-  'resource.type="cloud_run_job" AND resource.labels.job_name="homesignal-refresh"' \
+  'resource.type="build" AND protoPayload.resourceName:"triggers/homesignal-refresh-daily"' \
   --limit=200
 ```
 
 ### Trigger refresh manually
 
 ```bash
-gcloud run jobs execute homesignal-refresh --region us-central1 --async
+gcloud scheduler jobs run homesignal-refresh-3am --location us-central1
 ```
 
-### Check latest execution status
+### Check latest build status
 
 ```bash
-gcloud run jobs executions list --job homesignal-refresh --region us-central1 --limit=10
+gcloud builds list --limit=10
+gcloud builds describe BUILD_ID
 ```
 
 ## Notes
 
 - Cloud Run local filesystem is ephemeral. Durable data refresh depends on GCS snapshot publish + app sync.
 - Current `.env.gcp.yaml` contains plain text keys for testing. Move to Secret Manager for production.
-- Context refresh (`pipeline/context_ingestion`) is currently skipped in scheduled job to reduce runtime and memory pressure.
+- Context refresh (`pipeline/context_ingestion`) is currently skipped in scheduled refresh to reduce runtime and memory pressure.
