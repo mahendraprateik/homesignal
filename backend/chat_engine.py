@@ -187,6 +187,7 @@ class ChatEngine:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM redfin_metrics WHERE metro_name = ? "
+                "AND region_type = 'metro' "
                 "ORDER BY period_date DESC LIMIT 1",
                 (canonical,),
             ).fetchone()
@@ -229,6 +230,7 @@ class ChatEngine:
                 conn.row_factory = sqlite3.Row
                 row = conn.execute(
                     "SELECT * FROM redfin_metrics WHERE metro_name = ? "
+                    "AND region_type = 'metro' "
                     "ORDER BY period_date DESC LIMIT 1",
                     (canonical,),
                 ).fetchone()
@@ -266,7 +268,7 @@ class ChatEngine:
             # Safe: metric validated against allowlist, order validated above
             rows = conn.execute(
                 f"SELECT metro_name, {metric}, period_date FROM redfin_metrics "
-                f"WHERE period_date = ? AND {metric} IS NOT NULL "
+                f"WHERE period_date = ? AND region_type = 'metro' AND {metric} IS NOT NULL "
                 f"ORDER BY {metric} {order} LIMIT ?",
                 (latest_period, limit),
             ).fetchall()
