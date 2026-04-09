@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HomeSignal — Technical Presentation</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/reveal.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/theme/white.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --teal: #0D7377;
+    --teal-light: rgba(13, 115, 119, 0.08);
+    --dark: #1C1C1E;
+    --gray: #6B6B6B;
+    --bg: #FAFAF8;
+    --border: #E8E6E1;
+  }
+
+  .reveal {
+    font-family: 'Inter', sans-serif;
+    font-size: 24px;
+    color: var(--dark);
+  }
+  .reveal .slides { text-align: left; }
+  .reveal .slides section { padding-bottom: 30px; }
+
+  .reveal h1, .reveal h2 {
+    font-family: 'Instrument Serif', serif;
+    font-weight: 400;
+    color: var(--dark);
+    letter-spacing: -0.02em;
+  }
+  .reveal h1 { font-size: 3.2rem; margin-bottom: 0.2em; }
+  .reveal h2 { font-size: 1.7rem; margin-bottom: 0.4em; border-bottom: 3px solid var(--teal); padding-bottom: 0.2em; display: inline-block; }
+  .reveal h3 {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--teal);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.25em;
+    margin-top: 0.1em;
+  }
+
+  .reveal p, .reveal li {
+    font-size: 0.78rem;
+    line-height: 1.55;
+    color: #2C2C2E;
+  }
+  .reveal ul { list-style: none; padding-left: 0; margin: 0.2em 0; }
+  .reveal ul li::before {
+    content: "";
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: var(--teal);
+    border-radius: 50%;
+    margin-right: 10px;
+    vertical-align: middle;
+  }
+  .reveal ul li { margin-bottom: 0.3em; }
+
+  .reveal code, .reveal pre code {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+  }
+  .reveal pre {
+    background: #1C1C1E;
+    border-radius: 10px;
+    padding: 10px 14px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    width: 100%;
+    margin: 0.5em 0;
+  }
+  .reveal pre code { color: #E8E6E1; line-height: 1.5; }
+
+  .reveal table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.72rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 0.4em 0;
+  }
+  .reveal thead th {
+    background: #F5F3F0;
+    font-weight: 600;
+    font-size: 0.64rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #5A5A5A;
+    padding: 7px 12px;
+    text-align: left;
+    border-bottom: 2px solid var(--teal);
+  }
+  .reveal tbody td {
+    padding: 6px 12px;
+    border-bottom: 1px solid #EDEBE7;
+    color: #2C2C2E;
+  }
+  .reveal tbody tr:last-child td { border-bottom: none; }
+
+  /* -- Title slide -- */
+  .title-slide {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    height: 100%;
+    padding-left: 60px;
+  }
+  .title-slide h1 {
+    font-size: 4rem;
+    margin-bottom: 0.1em;
+    line-height: 1.1;
+  }
+  .title-slide .subtitle {
+    font-family: 'Inter', sans-serif;
+    font-size: 1.15rem;
+    color: var(--gray);
+    font-weight: 400;
+    margin-bottom: 2em;
+  }
+  .title-slide .author {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--teal);
+    font-weight: 500;
+  }
+  .title-slide .role {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8rem;
+    color: var(--gray);
+    margin-top: 0.3em;
+  }
+  .title-accent {
+    display: inline-block;
+    width: 60px;
+    height: 4px;
+    background: var(--teal);
+    border-radius: 2px;
+    margin-bottom: 1.5em;
+  }
+
+  /* -- Utility -- */
+  .teal { color: var(--teal); }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+  .small { font-size: 0.75rem; color: var(--gray); }
+  .badge {
+    display: inline-block;
+    background: var(--teal-light);
+    color: var(--teal);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    font-weight: 500;
+    padding: 3px 10px;
+    border-radius: 4px;
+    margin-right: 6px;
+    border: 1px solid rgba(13,115,119,0.15);
+  }
+  .slide-number { display: none; }
+
+  .reveal .progress { color: var(--teal); height: 3px; }
+  .reveal .controls { color: var(--teal); }
+
+  /* Breadcrumbs */
+  .breadcrumb {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.52rem;
+    color: #999;
+    letter-spacing: 0.03em;
+    margin-bottom: 0.3em;
+  }
+  .breadcrumb .active { color: var(--teal); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- ============================================ -->
+<!-- SLIDE 1: Title -->
+<!-- ============================================ -->
+<section>
+  <div class="title-slide">
+    <div class="title-accent"></div>
+    <h1>HomeSignal</h1>
+    <p class="subtitle">AI-Powered Housing Market Intelligence</p>
+    <p class="author">Prateik Mahendra</p>
+    <p class="role">Agentic Analytics Engineer — Take-Home Project</p>
+    <div style="margin-top: 2em;">
+      <span class="badge">Claude Opus</span>
+      <span class="badge">RAG + SQL Tools</span>
+      <span class="badge">Redfin + FRED</span>
+      <span class="badge">Cloud Run</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 2: Agenda -->
+<!-- ============================================ -->
+<section>
+  <h2>Agenda</h2>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 0.4em;">
+    <div>
+      <h3>The What</h3>
+      <ul>
+        <li>Problem &amp; Solution</li>
+        <li>Architecture Overview</li>
+      </ul>
+
+      <h3 style="margin-top: 0.6em;">The Data Layer</h3>
+      <ul>
+        <li>Data Pipeline &amp; Ingestion</li>
+        <li>Semantic Model (13 metrics)</li>
+        <li>Vector Store Design (2 collections)</li>
+      </ul>
+
+      <h3 style="margin-top: 0.6em;">The AI Layer</h3>
+      <ul>
+        <li>RAG Engine — retrieval, guardrails, citations</li>
+        <li>Chat Engine — the agentic hybrid (RAG + SQL)</li>
+        <li>Token &amp; Memory Management</li>
+      </ul>
+    </div>
+    <div>
+      <h3>The Product</h3>
+      <ul>
+        <li>Frontend &amp; AI Features</li>
+        <li>Cloud Deployment</li>
+      </ul>
+
+      <h3 style="margin-top: 0.6em;">Quality &amp; Reflection</h3>
+      <ul>
+        <li>Evaluations &amp; Feedback</li>
+        <li>Known Limitations</li>
+        <li>Key Tradeoffs</li>
+        <li>Next Steps</li>
+      </ul>
+
+      <h3 style="margin-top: 0.6em;">Live Demo</h3>
+      <ul>
+        <li>Dashboard, chart tooltips, daily brief, chat</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 3: The Problem & Solution -->
+<!-- ============================================ -->
+<section>
+  <div class="breadcrumb"><span class="active">The What</span> · Data Layer · AI Layer · Product · Quality · Demo</div>
+  <h2>The Problem</h2>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 0.5em;">
+    <div>
+      <h3>What exists today</h3>
+      <ul>
+        <li>Redfin Data Center — raw tables, no intelligence layer</li>
+        <li>Zillow / Datadoor — static dashboards, no conversational access</li>
+        <li>ChatGPT — no access to current housing data, hallucinates numbers</li>
+      </ul>
+    </div>
+    <div>
+      <h3>What I built</h3>
+      <ul>
+        <li>Live dashboard with <strong>5 key metrics</strong> across 20 metros</li>
+        <li>AI-generated tooltips and daily briefs — not just data, <em>insights</em></li>
+        <li>Conversational chat grounded in <strong>real, cited data</strong></li>
+        <li>An <strong>agentic engine</strong> that chooses between vector search and SQL tools</li>
+      </ul>
+    </div>
+  </div>
+  <div style="margin-top: 1.5em; padding: 10px 14px; background: var(--teal-light); border-left: 4px solid var(--teal); border-radius: 0 8px 8px 0;">
+    <p style="margin: 0; font-size: 0.75rem;"><strong>HomeSignal</strong> = Redfin's data + FRED economic indicators + Claude's reasoning — automated daily, deployed on the web, with evaluations and feedback loops.</p>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 3: Architecture Overview -->
+<!-- ============================================ -->
+<section>
+  <div class="breadcrumb"><span class="active">The What</span> · Data Layer · AI Layer · Product · Quality · Demo</div>
+  <h2>Architecture</h2>
+  <h3>Three-Layer Data Model</h3>
+  <table>
+    <thead>
+      <tr><th>Layer</th><th>Technology</th><th>Purpose</th><th>Why This Choice</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Structured</strong></td>
+        <td><span class="mono" style="font-size:0.78rem;">SQLite</span></td>
+        <td>Precise queries, rankings, comparisons</td>
+        <td>Single-file, zero-config, &lt;100MB dataset, portable on Cloud Run</td>
+      </tr>
+      <tr>
+        <td><strong>Semantic</strong></td>
+        <td><span class="mono" style="font-size:0.78rem;">ChromaDB</span></td>
+        <td>Fuzzy retrieval for RAG</td>
+        <td>In-process, no server, two collections (market data + web context)</td>
+      </tr>
+      <tr>
+        <td><strong>Definitions</strong></td>
+        <td><span class="mono" style="font-size:0.78rem;">YAML semantic model</span></td>
+        <td>Single source of truth for all metrics</td>
+        <td>Prevents definition drift across 6 consumers</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top: 0.6em;">Data Ingestion &amp; Request Flow</h3>
+  <pre><code>Redfin S3 (7 geo levels) ──┐
+FRED API (4 series) ────────┤──▶ data_ingestion.py ──▶ SQLite
+                            │                            │
+                            │                    update_vectors.py
+                            │                            │
+Web Sources (7 sites) ──────┤──▶ context_ingestion/ ─▶ ChromaDB
+ Redfin News, Zillow,       │     (discover, chunk,    ├─ housing_market (Redfin vectors + trends)
+ Freddie Mac, Fed,          │      enrich, embed)      └─ housing_context (web article chunks)
+ BLS, Census                │
+                            ▼
+                    Streamlit Frontend
+                         │
+                    backend/api.py  ← single entry point
+                      ┌────┴────┐
+                      ▼         ▼
+                  rag.py    chat_engine.py
+                      │     (RAG + SQL tools)
+                      ▼         │
+                  ChromaDB    SQLite
+                      └── Claude ──┘</code></pre>
+  <p class="small" style="margin-top: 0.3em;">Every component reads metric definitions from <span class="mono">data/semantic_model.yaml</span> — pipeline, RAG, chat, frontend, evals.</p>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 4: Data Pipeline -->
+<!-- ============================================ -->
+<section>
+  <div class="breadcrumb">The What · <span class="active">Data Layer</span> · AI Layer · Product · Quality · Demo</div>
+  <h2>Data Pipeline</h2>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 0.4em;">
+    <div>
+      <h3>Three Data Sources</h3>
+      <table>
+        <thead>
+          <tr><th>Source</th><th>What</th><th>Cadence</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Redfin</strong></td><td>7 geo levels → SQLite; <strong>AI serves metro-level</strong></td><td>Monthly</td></tr>
+          <tr><td><strong>FRED</strong></td><td>Mortgage rates, CPI, unemployment, housing starts</td><td>Weekly</td></tr>
+          <tr><td><strong>Web</strong></td><td>7 sites (Redfin News, Zillow, Fed, BLS, Census, Freddie Mac) → ChromaDB</td><td>Daily</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top: 0.7em;">Ingestion Strategy</h3>
+      <table>
+        <thead>
+          <tr><th>Source</th><th>Strategy</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Redfin</strong></td><td>DROP + recreate</td><td>Full snapshot each month — simple, idempotent</td></tr>
+          <tr><td><strong>FRED</strong></td><td>DELETE range + INSERT</td><td>Incremental — preserves data outside ingestion window</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h3>Pipeline Flow</h3>
+      <pre><code>Redfin S3 (7 TSV.GZ) ──┐
+                        ├─▶ data_ingestion.py ─▶ SQLite
+FRED API (4 series) ────┘          │
+                           update_vectors.py
+                                   │
+                           ChromaDB: housing_market
+
+Web Sources (7 sites) ─▶ context_ingestion/
+ Redfin News, Zillow,       │
+ Freddie Mac, Fed,      discover → extract →
+ BLS, Census             chunk → enrich → embed
+                                   │
+                           ChromaDB: housing_context</code></pre>
+
+      <h3 style="margin-top: 0.7em;">Key Decisions</h3>
+      <ul>
+        <li><strong>Top-N filtering</strong> per geography — 20 metros, 100 cities, 200 ZIPs — ranked by homes sold</li>
+        <li><strong>FRED is NOT in vectors</strong> — time-series is better queried via SQL than embedded</li>
+        <li><strong>AI layer is metro-scoped</strong> — all 7 geo levels in SQLite, SQL tools currently serve metro. Sub-metro data ready for expansion</li>
+        <li>All scripts are <strong>idempotent</strong> — safe to re-run at any time</li>
+      </ul>
+      <div style="height: 30px;"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 5: Semantic Model -->
+<!-- ============================================ -->
+<section>
+  <div class="breadcrumb">The What · <span class="active">Data Layer</span> · AI Layer · Product · Quality · Demo</div>
+  <h2>Semantic Model</h2>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 0.4em;">
+    <div>
+      <h3>One YAML, Six Consumers</h3>
+      <p style="font-size: 0.75rem;">Every metric (display name, format, source column, delta behavior, vector formatting, ranking rules) is defined once in <span class="mono">data/semantic_model.yaml</span>.</p>
+      <table>
+        <thead>
+          <tr><th>Consumer</th><th>What It Reads</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="mono" style="font-size:0.75rem;">data_ingestion.py</span></td><td>Column rename map</td></tr>
+          <tr><td><span class="mono" style="font-size:0.75rem;">update_vectors.py</span></td><td>Vector format (digits, prefix, suffix)</td></tr>
+          <tr><td><span class="mono" style="font-size:0.75rem;">rag.py</span></td><td>Grounding text for prompts</td></tr>
+          <tr><td><span class="mono" style="font-size:0.75rem;">chat_engine.py</span></td><td>Rankable metric allowlist</td></tr>
+          <tr><td><span class="mono" style="font-size:0.75rem;">api.py</span></td><td>Dashboard card config</td></tr>
+          <tr><td><span class="mono" style="font-size:0.75rem;">app.py</span></td><td>Card rendering &amp; formatting</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h3>13 Metrics Defined</h3>
+      <table style="font-size: 0.75rem;">
+        <thead>
+          <tr><th>Source</th><th>Metric</th><th>Dashboard</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Redfin</td><td><strong>Median Sale Price</strong></td><td style="text-align:center;">&#10003;</td></tr>
+          <tr><td>Redfin</td><td><strong>Days on Market</strong></td><td style="text-align:center;">&#10003;</td></tr>
+          <tr><td>Redfin</td><td><strong>Inventory</strong></td><td style="text-align:center;">&#10003;</td></tr>
+          <tr><td>Redfin</td><td><strong>Price Drop %</strong></td><td style="text-align:center;">&#10003;</td></tr>
+          <tr><td>Redfin</td><td>Homes Sold, New Listings, Months of Supply, Sale-to-List, Sold Above List</td><td></td></tr>
+          <tr><td>FRED</td><td><strong>30yr Mortgage Rate</strong></td><td style="text-align:center;">&#10003;</td></tr>
+          <tr><td>FRED</td><td>CPI, Unemployment Rate, Housing Starts</td><td></td></tr>
+        </tbody>
+      </table>
+      <p class="small" style="margin-top: 0.3em;">+ 3 derived MoM/YoY columns. <strong>Bold</strong> = shown on dashboard cards. All 13 metrics defined once in YAML, consumed by 6 components.</p>
+
+      <h3 style="margin-top: 0.5em;">Why This Matters</h3>
+      <ul>
+        <li>Adding a new metric = <strong>one YAML change</strong> that propagates everywhere</li>
+        <li>Same concept as a <strong>dbt semantic layer</strong> — one contract, many consumers</li>
+        <li>Contract tests (<span class="mono">test_semantic_model.py</span>) verify all consumers stay in sync</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 6: Vector Store Design -->
+<!-- ============================================ -->
+<section>
+  <div class="breadcrumb">The What · <span class="active">Data Layer</span> · AI Layer · Product · Quality · Demo</div>
+  <h2>Vector Store Design</h2>
+  <h3>Three Document Types in ChromaDB</h3>
+  <table>
+    <thead>
+      <tr><th>Type</th><th>Count</th><th>Example</th><th>Why It Exists</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="badge">market_data</span></td>
+        <td>1 per (region, month)</td>
+        <td>"Seattle, Mar 2026: Median $850K, 45 DOM, 8,200 inventory..."</td>
+        <td>All 7 geo levels embedded — metro, city, county, state, ZIP, neighborhood, national</td>
+      </tr>
+      <tr>
+        <td><span class="badge">metro_trend</span></td>
+        <td>1 per region</td>
+        <td>"Seattle: $750K to $850K (+13.3%), rising trend over 18 months"</td>
+        <td>Pre-computed so "how has Seattle changed?" doesn't need 12 retrievals</td>
+      </tr>
+      <tr>
+        <td><span class="badge">metric_definition</span></td>
+        <td>1</td>
+        <td>All metric definitions from the semantic model</td>
+        <td>Grounds the embedding space — anchors what "days on market" means</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top: 0.6em;">Second Collection: Web Context</h3>
+  <table>
+    <thead>
+      <tr><th>Collection</th><th>Sources</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="mono" style="font-size:0.75rem;">housing_market</span></td>
+        <td>Redfin metrics (all geo levels)</td>
+        <td>Market data snapshots, trend summaries, metric definitions</td>
+      </tr>
+      <tr>
+        <td><span class="mono" style="font-size:0.75rem;">housing_context</span></td>
+        <td>7 web sources (Redfin News, Zillow Research, Freddie Mac, Fed, BLS, Census, Redfin Migration)</td>
+        <td>Enriched article chunks — market narratives, forecasts, macro context</td>
+      </tr>
+    </tbody>
+  </table>
+  <p style="font-size: 0.72rem; margin-top: 0.4em;">Context ingestion pipeline: <strong>discover URLs → extract articles → semantic chunking → enrich (signals, drivers, metrics) → summarize → deduplicate → embed</strong>. Content-hash dedup prevents re-inserting existing chunks.</p>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 0.5em;">
+    <div>
+      <h3>Embedding Model</h3>
+      <ul>
+        <li><span class="mono">BAAI/bge-small-en-v1.5</span> — 384 dimensions</li>
+        <li>Runs <strong>locally</strong> — no API calls, no cost, no external dependency</li>
+        <li>Same model for both collections — consistent embedding space</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Rebuild Strategy</h3>
+      <ul>
+        <li><span class="mono">housing_market</span>: <strong>cleared and rebuilt</strong> every run — fast, prevents stale docs</li>
+        <li><span class="mono">housing_context</span>: <strong>incremental</strong> — deduplicates against existing, only inserts new chunks</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 7: RAG Engine -->
+<!-- ============================================ -->
+<section>
+  <div class="breadcrumb">The What · Data Layer · <span class="active">AI Layer</span> · Product · Quality · Demo</div>
+  <h2>RAG Engine</h2>
+  <h3>Query Flow</h3>
+  <pre><code>User Question
+  ─▶ Metro Detection (alias map, longest-first matching)
+  ─▶ Guardrail Check (future predictions, property valuations)
+  ─▶ ChromaDB Retrieval (top-5 per metro, deduplicated)
+  ─▶ Context Assembly (retrieved docs + metric definitions)
+  ─▶ Claude Opus (temp 0.2, 4096 tokens)
+  ─▶ Citation Enforcement ([1], [2] markers)
+  ─▶ Confidence Scoring (high / medium / low)</code></pre>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 0.5em;">
+    <div>
+      <h3>Metro Detection</h3>
+      <ul>
+        <li>Alias map: "Phoenix" / "Phoenix AZ" / full name all resolve to canonical</li>
+        <li>Sorted <strong>longest-first</strong> — prevents substring shadowing</li>
+        <li><strong>Follow-up inference</strong>: scans history for most recent metro</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Guardrails</h3>
+      <ul>
+        <li><strong>Future predictions</strong> blocked — "forecast", "predict", "2027"</li>
+        <li><strong>Property valuations</strong> blocked — "what is 123 Main St worth"</li>
+        <li>Keyword heuristic: fast, no training data needed</li>
+        <li>Current accuracy: <strong>60%</strong> — known weakness, classifier would be better</li>
+      </ul>
+
+      <h3 style="margin-top: 0.6em;">Confidence Scoring</h3>
+      <ul>
+        <li>&ge;3 market docs = <span class="teal"><strong>high</strong></span></li>
+        <li>&ge;1 = <strong>medium</strong></li>
+        <li>0 = <strong>low</strong> (early return: "I don't have enough data")</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 8: Chat Engine — The Agent -->
+<!-- ============================================ -->
+<section>
+  <div class="breadcrumb">The What · Data Layer · <span class="active">AI Layer</span> · Product · Quality · Demo</div>
+  <h2>Chat Engine — The Agent</h2>
+  <p style="font-size: 0.78rem;">The most architecturally interesting component. Combines <strong>two retrieval paradigms</strong> in one agentic loop.</p>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 0.4em;">
+    <div>
+      <h3>How It Works</h3>
+      <pre><code>1. RAG retrieval first
+   (context docs always injected)
+        │
+2. Claude sees context + 4 SQL tools
+        │
+3. Tool-use loop (max 3 iterations)
+   Claude calls tool ─▶ gets result
+   ─▶ reasons further ─▶ may call again
+        │
+4. Merge sources (RAG + SQL)
+   ─▶ Return cited answer</code></pre>
+
+      <h3 style="margin-top: 0.5em;">Why Hybrid?</h3>
+      <ul>
+        <li><strong>RAG alone</strong> can't answer "which metro has the highest inventory?" — needs SQL aggregation</li>
+        <li><strong>SQL alone</strong> can't answer "what's driving Phoenix's market?" — needs narrative context</li>
+        <li>The LLM is the router — <strong>it decides</strong> which tools to call</li>
+      </ul>
+    </div>
+    <div>
+      <h3>The 4 SQL Tools</h3>
+      <table>
+        <thead>
+          <tr><th>Tool</th><th>Purpose</th><th>Safety</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="mono" style="font-size:0.72rem;">query_latest_metrics</span></td><td>Current snapshot for a metro</td><td>Metro alias validation</td></tr>
+          <tr><td><span class="mono" style="font-size:0.72rem;">query_mortgage_rate</span></td><td>30yr fixed rate</td><td>No input needed</td></tr>
+          <tr><td><span class="mono" style="font-size:0.72rem;">compare_metros</span></td><td>Side-by-side (max 5)</td><td>Per-metro validation</td></tr>
+          <tr><td><span class="mono" style="font-size:0.72rem;">top_metros_by_metric</span></td><td>Rankings</td><td>Metric allowlist + limit clamp</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top: 0.5em;">Agent Safety &amp; Termination</h3>
+      <ul>
+        <li><strong>Max 3 iterations</strong> — prevents infinite tool-use loops</li>
+        <li>Stops when <span class="mono">stop_reason != "tool_use"</span></li>
+        <li>All SQL uses <strong>parameterized queries</strong> — no injection risk</li>
+        <li>Dynamic columns validated against <strong>semantic model allowlist</strong></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 9: Token & Memory Management -->
+<!-- ============================================ -->
+<section>
+  <div class="breadcrumb">The What · Data Layer · <span class="active">AI Layer</span> · Product · Quality · Demo</div>
+  <h2>Token &amp; Memory Management</h2>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 0.4em;">
+    <div>
+      <h3>Token Budget</h3>
+      <table>
+        <thead>
+          <tr><th>Parameter</th><th>Value</th><th>Rationale</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Max output tokens</td><td><span class="mono">4,096</span></td><td>Enough for detailed answers with tables &amp; citations</td></tr>
+          <tr><td>Temperature</td><td><span class="mono">0.2</span></td><td>Low hallucination risk, natural prose (0.0 feels robotic)</td></tr>
+          <tr><td>Retrieval top-K</td><td><span class="mono">5 per metro</span></td><td>Balances context relevance vs. token cost</td></tr>
+          <tr><td>Tooltip max tokens</td><td><span class="mono">60</span></td><td>One sentence — Haiku, fast &amp; cheap</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top: 0.6em;">Model Selection by Task</h3>
+      <table>
+        <thead>
+          <tr><th>Task</th><th>Model</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Chat &amp; Daily Brief</td><td><span class="badge">Opus</span></td><td>Complex reasoning, tool use, synthesis</td></tr>
+          <tr><td>Chart Tooltips</td><td><span class="badge">Haiku</span></td><td>60 tokens — doesn't need Opus. 10x cheaper, faster</td></tr>
+          <tr><td>Eval Judge</td><td><span class="badge">Haiku</span></td><td>Scoring is structured — deterministic at temp 0.0</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h3>Conversation Memory</h3>
+      <ul>
+        <li><strong>6 turns</strong> (12 messages) retained per conversation</li>
+        <li>Older turns dropped to control input token budget</li>
+        <li>Follow-up inference: scans history reverse-chronologically to find most recent metro</li>
+        <li>Chat history capped at <strong>50 messages</strong> per metro in session state</li>
+      </ul>
+
+      <h3 style="margin-top: 0.6em;">Thread Safety</h3>
+      <ul>
+        <li>Engine singletons shared across Streamlit sessions — avoids re-loading models per request</li>
+        <li><span class="mono">threading.local()</span> for per-request tool sources — prevents cross-session data leakage</li>
+        <li>Double-checked locking on singleton initialization</li>
+      </ul>
+
+      <h3 style="margin-top: 0.6em;">Caching Layers</h3>
+      <ul>
+        <li>Metric definition doc cached at <span class="mono">__init__</span> — no ChromaDB round-trip per query</li>
+        <li>Tooltips &amp; briefs cached in SQLite — subsequent visits are instant</li>
+        <li>Streamlit <span class="mono">@cache_data</span> with TTLs (5 min to 1 hour)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 10: Frontend & AI Features -->
+<!-- ============================================ -->
+<section>
+  <div class="breadcrumb">The What · Data Layer · AI Layer · <span class="active">Product</span> · Quality · Demo</div>
+  <h2>Frontend &amp; AI Features</h2>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 0.4em;">
+    <div>
+      <h3>Strict API Boundary</h3>
+      <p style="font-size: 0.75rem;">Frontend imports <strong>only</strong> <span class="mono">backend.api</span> and <span class="mono">formatting.py</span>. Never <span class="mono">sqlite3</span>, never <span class="mono">backend.rag</span>. If we swapped Streamlit for React, only the frontend changes.</p>
+
+      <h3 style="margin-top: 0.6em;">Three AI Features</h3>
+      <table>
+        <thead>
+          <tr><th>Feature</th><th>Model</th><th>How</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>AI Tooltips</strong></td><td>Haiku</td><td>Hover chart points — AI insight per data point. 4 threads in parallel, cached in SQLite</td></tr>
+          <tr><td><strong>Daily Brief</strong></td><td>Opus</td><td>One per metro per day. Dark card with teal border. Synthesizes 5 key metrics</td></tr>
+          <tr><td><strong>RAG Chat</strong></td><td>Opus</td><td>Full conversational interface with citations, sources, feedback buttons</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h3>Dashboard</h3>
+      <ul>
+        <li><strong>5 metric cards</strong> — median price, DOM, inventory, price drops, mortgage rate</li>
+        <li>MoM deltas with color coding — <span class="teal">green = better for buyers</span></li>
+        <li>12-month Plotly trend chart with interactive hover</li>
+        <li>Metro selector with 20 metros</li>
+      </ul>
+
+      <h3 style="margin-top: 0.5em;">Security</h3>
+      <ul>
+        <li><strong>XSS</strong>: AI content HTML-escaped. <strong>LaTeX</strong>: dollar signs escaped</li>
+        <li><strong>No raw SQL</strong> in frontend — API layer only</li>
+        <li>API keys in <span class="mono">.env</span>, never committed</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 11: Cloud Deployment -->
+<!-- ============================================ -->
+<section>
+  <div class="breadcrumb">The What · Data Layer · AI Layer · <span class="active">Product</span> · Quality · Demo</div>
+  <h2>Cloud Deployment</h2>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 0.4em;">
+    <div>
+      <h3>Daily Automated Refresh</h3>
+      <pre><code>Cloud Scheduler (daily 3 AM PST)
+  ─▶ Pub/Sub
+  ─▶ Cloud Build
+  ─▶ cloud_refresh_job.py
+      ├── Check freshness thresholds
+      │   (FRED: 8 days, Redfin: 35 days)
+      ├── Ingest if stale
+      ├── Rebuild ChromaDB vectors
+      └── Package snapshot (tar.gz)
+          ─▶ Upload to GCS
+              + SHA256 checksum
+              + latest.json manifest</code></pre>
+    </div>
+    <div>
+      <h3>Cloud Run (Always-On)</h3>
+      <pre><code>On startup / every 15 min:
+  ─▶ Check GCS latest.json
+  ─▶ If new snapshot:
+      ├── Download &amp; extract
+      ├── Reset engine singletons
+      └── Serve with fresh data</code></pre>
+
+      <h3 style="margin-top: 0.6em;">Why Snapshot-Based?</h3>
+      <ul>
+        <li>Cloud Run has <strong>ephemeral filesystem</strong> — can't persist SQLite across restarts</li>
+        <li>Snapshot packages everything into a portable archive</li>
+        <li>No managed database needed — GCS storage costs pennies</li>
+        <li>Simple, reliable, and <strong>cheaper than Cloud SQL</strong> (~$30/month saved)</li>
+      </ul>
+
+      <h3 style="margin-top: 0.6em;">Freshness Heuristic</h3>
+      <ul>
+        <li>FRED: stale if <span class="mono">MAX(period_date)</span> &gt; 8 days (publishes weekly)</li>
+        <li>Redfin: stale if <span class="mono">MAX(period_date)</span> &gt; 35 days (publishes monthly)</li>
+        <li>Stateless — just checks the database, no external dependency</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 12: Evaluations & Feedback -->
+<!-- ============================================ -->
+<section>
+  <div class="breadcrumb">The What · Data Layer · AI Layer · Product · <span class="active">Quality</span> · Demo</div>
+  <h2>Evaluations &amp; Feedback</h2>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 0.4em;">
+    <div>
+      <h3>Eval Methodology</h3>
+      <ul>
+        <li><strong>25 questions</strong> — metric accuracy (10), reasoning (10), guardrails (5)</li>
+        <li><strong>LLM-as-judge</strong>: Haiku at temp 0.0 — automated, repeatable</li>
+      </ul>
+
+      <table style="margin-top: 0.3em;">
+        <thead>
+          <tr><th>Category</th><th>Score</th><th>Assessment</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Metric Accuracy</td><td><span class="mono">7.9 / 10</span></td><td>Up from 4.6 with SQL tools</td></tr>
+          <tr><td>Reasoning</td><td><span class="mono">9.0 / 10</span></td><td><strong>Strong</strong></td></tr>
+          <tr><td>Guardrails</td><td><span class="mono">3 / 5</span></td><td>Needs work</td></tr>
+          <tr><td><strong>Overall</strong></td><td><span class="mono"><strong>7.84</strong></span></td><td>Up from 6.56</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top: 0.5em;">Key Insight: Inverted Difficulty</h3>
+      <div style="padding: 10px 14px; background: var(--teal-light); border-left: 4px solid var(--teal); border-radius: 0 8px 8px 0;">
+        <p style="margin: 0; font-size: 0.72rem;">Easy questions (factual lookups) score <strong>7.14</strong>. Hard questions (reasoning) score <strong>9.0</strong>. The bottleneck is retrieval precision, not LLM capability. SQL tools improved easy scores from 4.1 to 7.1.</p>
+      </div>
+    </div>
+    <div>
+      <h3>Feedback Loop</h3>
+      <pre><code>User asks question
+  ─▶ ChatEngine generates cited answer
+  ─▶ User clicks thumbs up/down
+  ─▶ Stored in SQLite (question,
+      answer, metro, rating, timestamp)
+  ─▶ Stats visible in sidebar</code></pre>
+
+      <h3 style="margin-top: 0.5em;">Three Signals</h3>
+      <ul>
+        <li><strong>Per-question</strong>: Which questions are failing?</li>
+        <li><strong>Per-metro</strong>: Which regions have data gaps?</li>
+        <li><strong>Aggregate</strong>: Is the system getting better over time?</li>
+      </ul>
+
+      <h3 style="margin-top: 0.5em;">Honest Assessment</h3>
+      <div style="padding: 10px 14px; background: var(--teal-light); border-left: 4px solid var(--teal); border-radius: 0 8px 8px 0;">
+        <p style="margin: 0; font-size: 0.72rem;"><strong>Collection is live. Automation is next.</strong> Downvoted questions feed into eval dataset expansion. The feedback-to-improvement pipeline is the next step.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 14: Tradeoffs Summary -->
+<!-- ============================================ -->
+<section>
+  <div class="breadcrumb">The What · Data Layer · AI Layer · Product · <span class="active">Quality</span> · Demo</div>
+  <h2>Key Tradeoffs</h2>
+  <table style="margin-top: 0.6em;">
+    <thead>
+      <tr><th>Decision</th><th>Chose</th><th>Over</th><th>Because</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Database</td><td><strong>SQLite</strong></td><td>Postgres</td><td>Single-file, &lt;100MB, ephemeral Cloud Run filesystem</td></tr>
+      <tr><td>Vector DB</td><td><strong>ChromaDB</strong></td><td>Pinecone</td><td>In-process, no infra, dataset fits in-memory comfortably</td></tr>
+      <tr><td>Embeddings</td><td><strong>bge-small (local)</strong></td><td>OpenAI API</td><td>No external dependency, free, fast, privacy-preserving</td></tr>
+      <tr><td>Chat LLM</td><td><strong>Claude Opus</strong></td><td>GPT-4</td><td>Superior reasoning, native tool use, citation following</td></tr>
+      <tr><td>Tooltip LLM</td><td><strong>Claude Haiku</strong></td><td>Opus</td><td>60-token outputs don't need Opus — 10x cheaper</td></tr>
+      <tr><td>FRED storage</td><td><strong>SQL only</strong></td><td>Embed everything</td><td>Time-series is better queried precisely than semantically</td></tr>
+      <tr><td>Redfin ingest</td><td><strong>DROP + recreate</strong></td><td>Incremental</td><td>Full monthly snapshot — simple, idempotent</td></tr>
+      <tr><td>Cloud deploy</td><td><strong>GCS snapshots</strong></td><td>Cloud SQL</td><td>Cheaper, portable, no managed DB overhead</td></tr>
+      <tr><td>Guardrails</td><td><strong>Keyword heuristic</strong></td><td>Classifier</td><td>Fast, no training data. Trade-off: 60% accuracy</td></tr>
+      <tr><td>RAG framework</td><td><strong>Custom (~300 LOC)</strong></td><td>LangChain</td><td>Full control, transparent, debuggable</td></tr>
+      <tr><td>Metric defs</td><td><strong>YAML semantic model</strong></td><td>Hardcoded</td><td>One source of truth, prevents drift across 6 consumers</td></tr>
+    </tbody>
+  </table>
+  <div style="margin-top: 0.5em; padding: 10px 14px; background: var(--teal-light); border-left: 4px solid var(--teal); border-radius: 0 8px 8px 0;">
+    <p style="margin: 0; font-size: 0.72rem;">Every decision was made for the <strong>current scale</strong> (&lt;100MB structured data, single-user). Each has a clear upgrade path if requirements change.</p>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 15: Known Limitations -->
+<!-- ============================================ -->
+<section>
+  <div class="breadcrumb">The What · Data Layer · AI Layer · Product · <span class="active">Quality</span> · Demo</div>
+  <h2>Known Limitations</h2>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 0.4em;">
+    <div>
+      <h3>Guardrails (60% pass rate)</h3>
+      <ul>
+        <li>Keyword heuristic catches "predict", "forecast", "future" — but misses year-based references like "in 2027"</li>
+        <li>Some borderline questions slip through (e.g., "will inventory rise?" gets answered instead of blocked)</li>
+        <li><strong>Fix:</strong> lightweight classifier trained on eval questions</li>
+      </ul>
+
+      <h3 style="margin-top: 0.6em;">Chat: RAG vs SQL Tool Selection</h3>
+      <ul>
+        <li>Claude sometimes answers from RAG vector context instead of calling the SQL tool for factual lookups</li>
+        <li>This can return data from a neighboring month or slightly different number</li>
+        <li><strong>Fix:</strong> metadata-filtered retrieval + stronger tool-use prompting</li>
+      </ul>
+    </div>
+    <div>
+      <h3>AI Layer is Metro-Scoped</h3>
+      <ul>
+        <li>Pipeline ingests 7 geography levels into SQLite, but SQL tools and vectors currently serve metro-level only</li>
+        <li>ZIP, city, neighborhood queries return no results</li>
+        <li><strong>Fix:</strong> add sub-metro SQL tools (data is already in the DB)</li>
+      </ul>
+
+      <h3 style="margin-top: 0.6em;">Chat is Metro-Filtered by Dropdown</h3>
+      <ul>
+        <li>Chat is scoped to the selected metro in the sidebar</li>
+        <li>Asking about Phoenix while Nashville is selected won't return Phoenix data</li>
+        <li><strong>By design</strong> for session scoping — but could confuse users</li>
+      </ul>
+
+      <h3 style="margin-top: 0.6em;">Eval Suite</h3>
+      <ul>
+        <li>25 questions — low statistical power</li>
+        <li>LLM-as-judge not validated against human scores</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 16: Next Steps & Optimizations -->
+<!-- ============================================ -->
+<section>
+  <div class="breadcrumb">The What · Data Layer · AI Layer · Product · <span class="active">Quality</span> · Demo</div>
+  <h2>Next Steps &amp; Optimizations</h2>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 0.4em;">
+    <div>
+      <h3>High Priority</h3>
+      <ul>
+        <li><strong>Metadata-filtered retrieval</strong> — filter by exact metro + date for factual lookups. Biggest accuracy win</li>
+        <li><strong>Guardrail classifier</strong> — replace keyword matching (60%) with a trained classifier</li>
+        <li><strong>Expand eval suite</strong> — 25 to 100+ questions, validate judge against human scores</li>
+      </ul>
+
+      <h3 style="margin-top: 0.5em;">Feedback Automation</h3>
+      <ul>
+        <li>Surface frequently downvoted questions, auto-add to golden dataset</li>
+        <li>Alert when downvote rate spikes for a metro</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Engineering Improvements</h3>
+      <ul>
+        <li><strong>Integration tests</strong> — end-to-end pipeline + RAG retrieval tests</li>
+        <li><strong>Dockerfile hardening</strong> — non-root user, health check endpoint</li>
+        <li><strong>Rate limit handling</strong> — exponential backoff for parallel API calls</li>
+        <li><strong>Structured logging</strong> — latency tracking, error dashboards, alerts</li>
+      </ul>
+
+      <h3 style="margin-top: 0.5em;">Feature Additions</h3>
+      <ul>
+        <li><strong>Sub-metro SQL tools</strong> — city, ZIP, county data already in SQLite</li>
+        <li>Visual metro comparison (side-by-side charts)</li>
+        <li>Multi-metric trend charts (price + inventory + DOM)</li>
+        <li>Structured guardrail flags (replace string matching)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================ -->
+<!-- SLIDE 17: Live Demo -->
+<!-- ============================================ -->
+<section>
+  <div class="title-slide">
+    <div class="title-accent"></div>
+    <h1>Live Demo</h1>
+    <p class="subtitle">Let me show you HomeSignal in action.</p>
+    <div style="margin-top: 1.5em;">
+      <h3>Demo Script</h3>
+      <ul>
+        <li><strong>Dashboard</strong> — metric cards, MoM deltas, data freshness</li>
+        <li><strong>Trend chart</strong> — hover for AI-generated tooltips</li>
+        <li><strong>Daily brief</strong> — synthesized market narrative</li>
+        <li><strong>Chat: factual</strong> — "What is the median sale price in Seattle?"</li>
+        <li><strong>Chat: reasoning</strong> — "Is Phoenix a buyer's or seller's market?"</li>
+        <li><strong>Chat: guardrail</strong> — "Can you predict where Phoenix prices will go?"</li>
+        <li><strong>Chat: follow-up</strong> — "How about inventory trends?"</li>
+        <li><strong>Chat: macro</strong> — "What is the current 30-year mortgage rate?"</li>
+        <li><strong>Feedback</strong> — thumbs up/down, sources expansion</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/reveal.min.js"></script>
+<script>
+Reveal.initialize({
+  hash: true,
+  width: 1280,
+  height: 720,
+  margin: 0.08,
+  transition: 'none',
+  slideNumber: false,
+  controls: true,
+  progress: true,
+  center: false,
+});
+</script>
+</body>
+</html>
